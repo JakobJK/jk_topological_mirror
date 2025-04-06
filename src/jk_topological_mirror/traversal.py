@@ -1,8 +1,5 @@
 import maya.api.OpenMaya as om
-
 from collections import OrderedDict, deque
-
-
 
 def _get_uv_ids_from_ordered_edges(mesh, edges, face_idx):
     """ Given a list of edges, return a list of UV IDs in the correct order. """

@@ -55,8 +55,6 @@ def mirror_vertices(mesh, verts_mapping, edge_center, symmetrice=False, axis='X'
     axis_index = {'X': 0, 'Y': 1, 'Z': 2}[axis.upper()]
     center = edge_center[axis_index]
 
-    print(f"[Mirror] Axis: {axis}, Index: {axis_index}, Center: {center}")
-
     for vert_a, vert_b in verts_mapping.items():
         pos_a = om.MPoint(points[vert_a])
         pos_b = om.MPoint(points[vert_b])
@@ -93,9 +91,6 @@ def mirror_vertices(mesh, verts_mapping, edge_center, symmetrice=False, axis='X'
                     pos_b[i] = center - delta
                 else:
                     pos_b[i] = pos_a[i]
-
-        print(f"         Pos A after:  {pos_a}")
-        print(f"         Pos B after:  {pos_b}")
 
         points[vert_a] = pos_a
         points[vert_b] = pos_b

@@ -45,6 +45,9 @@ class MirrorCommand(om.MPxCommand):
             om.MGlobal.displayError("Unknown mode. Use 'uvs' or 'vertices'.")
             return
 
+        if not self._edge_path or not self._mapping or not self._center:
+            return
+
         self.redoIt()
 
     def redoIt(self):
@@ -68,6 +71,7 @@ class MirrorCommand(om.MPxCommand):
 
     def _prepare_uvs(self):
         if not edge_selected():
+            self._edge_path = None
             return
 
         edge_path, edge_component = get_active_component()
@@ -76,6 +80,7 @@ class MirrorCommand(om.MPxCommand):
         connected_faces = edge_it.getConnectedFaces()
         if len(connected_faces) != 2:
             cmds.warning("Selected edge is not connected to exactly two faces.")
+            self._edge_path = None
             return
 
         mesh_fn = om.MFnMesh(edge_path)
@@ -84,6 +89,7 @@ class MirrorCommand(om.MPxCommand):
         connected_uvs = get_connect_uvs(mesh_fn.object(), left_face_index, right_face_index)
         if len(connected_uvs) != 2:
             cmds.warning("The two connected faces must share two UVs!")
+            self._edge_path = None
             return
 
         axis = 'U' if are_uvs_horizontal(connected_uvs) else 'V'
@@ -97,6 +103,7 @@ class MirrorCommand(om.MPxCommand):
         result = traverse(mesh_fn.object(), left_face_index, right_face_index, edge_index, edge_index, True)
         if not result:
             cmds.warning("Could not define symmetry.")
+            self._edge_path = None
             return
 
         visited_left, visited_right = result
@@ -108,6 +115,7 @@ class MirrorCommand(om.MPxCommand):
 
     def _prepare_vertices(self):
         if not edge_selected():
+            self._edge_path = None
             return
 
         edge_path, edge_component = get_active_component()
@@ -116,6 +124,7 @@ class MirrorCommand(om.MPxCommand):
         connected_faces = edge_it.getConnectedFaces()
         if len(connected_faces) != 2:
             cmds.warning("Selected edge is not connected to exactly two faces.")
+            self._edge_path = None
             return
 
         mesh_fn = om.MFnMesh(edge_path)
@@ -124,6 +133,7 @@ class MirrorCommand(om.MPxCommand):
         result = traverse(mesh_fn.object(), left_face_index, right_face_index, edge_index, edge_index, False)
         if not result:
             cmds.warning("Could not define symmetry.")
+            self._edge_path = None
             return
 
         visited_left, visited_right = result
@@ -148,7 +158,7 @@ class MirrorCommand(om.MPxCommand):
         syntax.addFlag("-m", "mode", om.MSyntax.kString)
         syntax.addFlag("-a", "average")
         syntax.addFlag("-rtl", "rightToLeft")
-        syntax.addFlag("-btt", "bottomToTop")
+        syntax.addFlag("-ttb", "topToBottom")
         return syntax
 
 def maya_useNewAPI():
