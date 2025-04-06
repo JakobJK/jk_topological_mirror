@@ -1,6 +1,3 @@
-from maya import cmds
-import maya.api.OpenMaya as om
-
 import maya.api.OpenMaya as om
 
 def mirror_uvs(mesh, uvs_mapping, edge_center, symmetrice=False, axis='U'):
@@ -50,8 +47,6 @@ def mirror_uvs(mesh, uvs_mapping, edge_center, symmetrice=False, axis='U'):
     mesh_fn.setUVs(uv_array_u, uv_array_v, uv_set_name)
     mesh_fn.updateSurface()
 
-from maya import cmds
-import maya.api.OpenMaya as om
 
 def mirror_vertices(mesh, verts_mapping, edge_center, symmetrice=False, axis='X'):
     mesh_fn = om.MFnMesh(mesh)
@@ -60,35 +55,47 @@ def mirror_vertices(mesh, verts_mapping, edge_center, symmetrice=False, axis='X'
     axis_index = {'X': 0, 'Y': 1, 'Z': 2}[axis.upper()]
     center = edge_center[axis_index]
 
+    print(f"[Mirror] Axis: {axis}, Index: {axis_index}, Center: {center}")
+
     for vert_a, vert_b in verts_mapping.items():
-        pos_a = points[vert_a]
-        pos_b = points[vert_b]
-
-        coord_a = pos_a[axis_index]
-        coord_b = pos_b[axis_index]
-
-        if symmetrice:
-            avg_distance = (abs(coord_a - center) + abs(coord_b - center)) / 2
-            mirrored_a = center + avg_distance if center < coord_a else center - avg_distance
-            mirrored_b = center - avg_distance if center < coord_a else center + avg_distance
-
-            pos_a[axis_index] = mirrored_a
-            pos_b[axis_index] = mirrored_b
-
-            for idx in {0, 1, 2} - {axis_index}:
-                avg_coord = (pos_a[idx] + pos_b[idx]) / 2
-                pos_a[idx] = avg_coord
-                pos_b[idx] = avg_coord
-        else:
-            distance = abs(coord_a - center)
-            mirrored_coord = center - distance if center < coord_a else center + distance
-            pos_b[axis_index] = mirrored_coord
-
-            for idx in {0, 1, 2} - {axis_index}:
-                pos_b[idx] = pos_a[idx]
+        pos_a = om.MPoint(points[vert_a])
+        pos_b = om.MPoint(points[vert_b])
 
         if vert_a == vert_b:
-            pos_a[axis_index] = center
+            for i in range(3):
+                if i == axis_index:
+                    pos_a[i] = center
+                    pos_b[i] = center
+                else:
+                    avg = (pos_a[i] + pos_b[i]) / 2
+                    pos_a[i] = avg
+                    pos_b[i] = avg
+            points[vert_a] = pos_a
+            points[vert_b] = pos_b
+            continue
+
+        if symmetrice:
+            for i in range(3):
+                if i == axis_index:
+                    a = pos_a[i] - center
+                    b = pos_b[i] - center
+                    avg = (abs(a) + abs(b)) / 2
+                    pos_a[i] = center + avg * (1 if a >= 0 else -1)
+                    pos_b[i] = center + avg * (1 if b >= 0 else -1)
+                else:
+                    avg = (pos_a[i] + pos_b[i]) / 2
+                    pos_a[i] = avg
+                    pos_b[i] = avg
+        else:
+            for i in range(3):
+                if i == axis_index:
+                    delta = pos_a[i] - center
+                    pos_b[i] = center - delta
+                else:
+                    pos_b[i] = pos_a[i]
+
+        print(f"         Pos A after:  {pos_a}")
+        print(f"         Pos B after:  {pos_b}")
 
         points[vert_a] = pos_a
         points[vert_b] = pos_b

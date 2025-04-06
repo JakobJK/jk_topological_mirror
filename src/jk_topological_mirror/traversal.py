@@ -2,6 +2,8 @@ import maya.api.OpenMaya as om
 
 from collections import OrderedDict, deque
 
+
+
 def _get_uv_ids_from_ordered_edges(mesh, edges, face_idx):
     """ Given a list of edges, return a list of UV IDs in the correct order. """
     uv_set_name = om.MFnMesh(mesh).currentUVSetName()
@@ -40,6 +42,7 @@ def _get_uv_ids_from_ordered_edges(mesh, edges, face_idx):
 
     return list(ordered_uv_ids.values())
 
+    
 def _get_verts_from_ordered_edges(mesh, edges, face_idx):
     """ Given a list of edges, return a list of vertices in the correct order. """
     face_it = om.MItMeshPolygon(mesh)

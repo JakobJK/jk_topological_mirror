@@ -1,6 +1,4 @@
-"""_summary_
-"""
-
+"""_summary_"""
 from maya import cmds
 import maya.api.OpenMaya as om
 
@@ -28,7 +26,7 @@ def get_shared_vertex_center_world(mesh_fn, face_index1, face_index2):
     shared_verts = verts1.intersection(verts2)
 
     if shared_verts:
-        points = mesh_fn.getPoints(om.MSpace.kWorld)
+        points = mesh_fn.getPoints(om.MSpace.kObject)
         shared_points = [points[v] for v in shared_verts]
 
         avg_point = om.MPoint()
@@ -40,6 +38,21 @@ def get_shared_vertex_center_world(mesh_fn, face_index1, face_index2):
 
     return None
 
+    
+def get_selected_edge_vector():
+    sel = om.MGlobal.getActiveSelectionList()
+    dag_path, component = sel.getComponent(0)
+    mesh_fn = om.MFnMesh(dag_path)
+
+    edges = om.MItMeshEdge(dag_path, component)
+    edge = next(edges)
+    
+    v1 = om.MVector(mesh_fn.getPoint(edge.vertexId(0), om.MSpace.kWorld))
+    v2 = om.MVector(mesh_fn.getPoint(edge.vertexId(1), om.MSpace.kWorld))
+    
+    vec = (v2 - v1)
+    vec.normalize()
+    return vec
 
 def get_shared_uv_center(mesh_fn, face_index1, face_index2):
     """
