@@ -1,6 +1,6 @@
 import maya.api.OpenMaya as om
 
-def mirror_uvs(mesh, uvs_mapping, edge_center, symmetrice=False, axis='U'):
+def mirror_uvs(mesh, uvs_mapping, edge_center, average=False, axis='U'):
     uv_set_name = om.MFnMesh(mesh).currentUVSetName()
     mesh_fn = om.MFnMesh(mesh)
     uv_array_u, uv_array_v = mesh_fn.getUVs(uv_set_name)
@@ -11,7 +11,7 @@ def mirror_uvs(mesh, uvs_mapping, edge_center, symmetrice=False, axis='U'):
         u_a, v_a = uv_array_u[uv_a], uv_array_v[uv_a]
         u_b, v_b = uv_array_u[uv_b], uv_array_v[uv_b]
 
-        if symmetrice:
+        if average:
             if axis == 'U':
                 avg_distance = (abs(u_a - center) + abs(u_b - center)) / 2
                 mirrored_u_a = center + avg_distance if center < u_a else center - avg_distance
@@ -48,7 +48,7 @@ def mirror_uvs(mesh, uvs_mapping, edge_center, symmetrice=False, axis='U'):
     mesh_fn.updateSurface()
 
 
-def mirror_vertices(mesh, verts_mapping, edge_center, symmetrice=False, axis='X'):
+def mirror_vertices(mesh, verts_mapping, edge_center, average=False, axis='X'):
     mesh_fn = om.MFnMesh(mesh)
     points = mesh_fn.getPoints(om.MSpace.kObject)
 
@@ -72,7 +72,7 @@ def mirror_vertices(mesh, verts_mapping, edge_center, symmetrice=False, axis='X'
             points[vert_b] = pos_b
             continue
 
-        if symmetrice:
+        if average:
             for i in range(3):
                 if i == axis_index:
                     a = pos_a[i] - center

@@ -2,16 +2,17 @@ from maya.api import OpenMaya as om
 from maya import cmds
 
 from jk_topological_mirror.utilities import (
-    edge_selected, get_shared_vertex_center_world, get_selected_edge_vector,
-    get_shared_uv_center, get_connect_uvs, get_camera_forward_vector,
-    get_dominant_axis_with_sign, get_current_active_camera, are_uvs_horizontal,
+    edge_selected, get_shared_vertex_center_world, get_selected_edge_vector, get_camera_vector,
+    get_shared_uv_center, get_connect_uvs, get_camera_axis_alignment, get_mirror_direction,
+    get_dominant_axis_with_sign, get_dominant_axis, get_current_active_camera, are_uvs_horizontal,
+    sort_by_world_space, get_intended_mirror_axis, is_uvs_sorted,
     get_active_component
 )
-from jk_topological_mirror.traversal import traverse, get_component_mapping, not_sorted_left_and_right
+from jk_topological_mirror.traversal import traverse, get_component_mapping
 from jk_topological_mirror.transform import mirror_uvs, mirror_vertices
 
-class MirrorCommand(om.MPxCommand):
-    kPluginCmdName = "mirrorComponents"
+class JkTopologicalMirrorCommand(om.MPxCommand):
+    kPluginCmdName = "jkTopologicalMirror"
 
     def __init__(self):
         super().__init__()
@@ -28,7 +29,7 @@ class MirrorCommand(om.MPxCommand):
 
     @staticmethod
     def cmdCreator():
-        return MirrorCommand()
+        return JkTopologicalMirrorCommand()
 
     def doIt(self, args):
         arg_data = om.MArgParser(self.syntax(), args)
@@ -92,8 +93,8 @@ class MirrorCommand(om.MPxCommand):
             self._edge_path = None
             return
 
-        axis = 'U' if are_uvs_horizontal(connected_uvs) else 'V'
-        is_sorted = not_sorted_left_and_right(mesh_fn, left_face_index, right_face_index, axis)
+        axis = 'V' if are_uvs_horizontal(connected_uvs) else 'U'
+        is_sorted = is_uvs_sorted(mesh_fn, left_face_index, right_face_index, axis)
 
         if axis == 'U' and (not is_sorted and self._left_to_right):
             left_face_index, right_face_index = right_face_index, left_face_index
@@ -127,10 +128,23 @@ class MirrorCommand(om.MPxCommand):
             self._edge_path = None
             return
 
-        mesh_fn = om.MFnMesh(edge_path)
-        left_face_index, right_face_index = connected_faces
+        camera = get_current_active_camera()
+        edge_vector = get_selected_edge_vector()
+        forward_vector = get_camera_vector(camera, "forward")
+        self._axis = get_intended_mirror_axis(edge_vector, forward_vector)
 
-        result = traverse(mesh_fn.object(), left_face_index, right_face_index, edge_index, edge_index, False)
+        sign = get_mirror_direction(camera, edge_vector)
+
+        mesh_fn = om.MFnMesh(edge_path)
+        face_a, face_b = connected_faces
+
+        if sort_by_world_space(mesh_fn, face_a, face_b, self._axis):
+            face_a, face_b = face_b, face_a
+
+        if not sign:
+            face_a, face_b = face_b, face_a
+
+        result = traverse(mesh_fn.object(), face_a, face_b, edge_index, edge_index, False)
         if not result:
             cmds.warning("Could not define symmetry.")
             self._edge_path = None
@@ -138,17 +152,7 @@ class MirrorCommand(om.MPxCommand):
 
         visited_left, visited_right = result
         self._mapping = get_component_mapping(mesh_fn.object(), 'verts', visited_left, visited_right)
-
-        camera = get_current_active_camera()
-        vector = get_camera_forward_vector(camera)
-        dominant, _ = get_dominant_axis_with_sign(vector)
-
-        edge_vector = get_selected_edge_vector()
-        other_axes = {'X', 'Y', 'Z'} - {dominant}
-        closest = max(other_axes, key=lambda a: abs(getattr(edge_vector, a.lower())))
-        self._axis = ({'X', 'Y', 'Z'} - {dominant, closest}).pop()
-
-        self._center = get_shared_vertex_center_world(mesh_fn, left_face_index, right_face_index)
+        self._center = get_shared_vertex_center_world(mesh_fn, face_a, face_b)
         self._edge_path = edge_path
         self._original_points = mesh_fn.getPoints(om.MSpace.kWorld)
 
@@ -166,8 +170,8 @@ def maya_useNewAPI():
 
 def initializePlugin(plugin):
     plugin_fn = om.MFnPlugin(plugin)
-    plugin_fn.registerCommand(MirrorCommand.kPluginCmdName, MirrorCommand.cmdCreator, MirrorCommand.createSyntax)
+    plugin_fn.registerCommand(JkTopologicalMirrorCommand.kPluginCmdName, JkTopologicalMirrorCommand.cmdCreator, JkTopologicalMirrorCommand.createSyntax)
 
 def uninitializePlugin(plugin):
     plugin_fn = om.MFnPlugin(plugin)
-    plugin_fn.deregisterCommand(MirrorCommand.kPluginCmdName)
+    plugin_fn.deregisterCommand(JkTopologicalMirrorCommand.kPluginCmdName)

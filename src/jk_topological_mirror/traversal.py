@@ -168,11 +168,6 @@ def get_polygon_center_uv(mesh_fn, face_index):
     center /= len(uvs)
     return center
 
-def not_sorted_left_and_right(mesh_fn, left_face_index, right_face_index, axis = 'U'):
-    left_center = get_polygon_center_uv(mesh_fn, left_face_index)
-    right_center = get_polygon_center_uv(mesh_fn, right_face_index)
-    return left_center.x < right_center.x if axis == 'U' else left_center.y > right_center.y
-
 
 def get_component_mapping(mesh, component_type, visited_left, visited_right):
     """. Maps the left side to the right side of components. """
