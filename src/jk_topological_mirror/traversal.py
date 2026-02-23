@@ -1,193 +1,249 @@
 import maya.api.OpenMaya as om
-from collections import OrderedDict, deque
+from collections import deque
+from typing import List, Dict, Tuple, Optional
 
-def _get_uv_ids_from_ordered_edges(mesh, edges, face_idx):
-    """ Given a list of edges, return a list of UV IDs in the correct order. """
-    uv_set_name = om.MFnMesh(mesh).currentUVSetName()
-    face_it = om.MItMeshPolygon(mesh)
-    face_it.setIndex(face_idx)
-    ordered_uv_ids = OrderedDict()
-
-    edge_it = om.MItMeshEdge(mesh)
-
-    edge_it.setIndex(edges[0])
-    first_edge_vertices = [edge_it.vertexId(0), edge_it.vertexId(1)]
-
-    edge_it.setIndex(edges[1])
-    second_edge_vertices = [edge_it.vertexId(0), edge_it.vertexId(1)]
-
-    uv_ids = {}
-    for i in range(face_it.polygonVertexCount()):
-        uv_id = face_it.getUVIndex(i, uv_set_name)
-        vertex_id = face_it.vertexIndex(i)
-        uv_ids[vertex_id] = uv_id
-
-    if first_edge_vertices[0] not in second_edge_vertices:
-        ordered_uv_ids[first_edge_vertices[0]] = uv_ids[first_edge_vertices[0]]
-    else:
-        ordered_uv_ids[first_edge_vertices[1]] = uv_ids[first_edge_vertices[1]]
-
-    ordered_uv_ids[first_edge_vertices[0]] = uv_ids[first_edge_vertices[0]]
-    ordered_uv_ids[first_edge_vertices[1]] = uv_ids[first_edge_vertices[1]]
-
-    for edge_index in edges[1:]:
-        edge_it.setIndex(edge_index)
-        edge_vertices = [edge_it.vertexId(0), edge_it.vertexId(1)]
-        for vertex in edge_vertices:
-            if vertex not in ordered_uv_ids:
-                ordered_uv_ids[vertex] = uv_ids[vertex]
-
-    return list(ordered_uv_ids.values())
-
-    
-def _get_verts_from_ordered_edges(mesh, edges, face_idx):
-    """ Given a list of edges, return a list of vertices in the correct order. """
-    face_it = om.MItMeshPolygon(mesh)
-    face_it.setIndex(face_idx)
-    ordered_vertices = OrderedDict()  
-
-    edge_it = om.MItMeshEdge(mesh)
-
-    edge_it.setIndex(edges[0])
-    first_edge_vertices = [edge_it.vertexId(0), edge_it.vertexId(1)  ]
-    
-    edge_it.setIndex(edges[1])
-    second_edge_vertices = [edge_it.vertexId(0), edge_it.vertexId(1)  ]
-
-    if first_edge_vertices[0] not in second_edge_vertices:
-        ordered_vertices[first_edge_vertices[0]] = None
-    else:
-        ordered_vertices[first_edge_vertices[1]] = None
-
-    ordered_vertices[first_edge_vertices[0]] = None
-    ordered_vertices[first_edge_vertices[1]] = None
-
-    for edge_index in edges[1:]:
-        edge_it.setIndex(edge_index)
-        edge_vertices = [edge_it.vertexId(0), edge_it.vertexId(1)]
-        for vertex in edge_vertices:
-            if vertex not in ordered_vertices:
-                ordered_vertices[vertex] = None
-
-    return list(ordered_vertices.keys())
-
-def _get_face_edges_from_start_edge(mesh, face_index, start_edge_index, reverse=False):
+def _get_face_edges_ordered(
+    poly_iterator: om.MItMeshPolygon, 
+    face_index: int, 
+    start_edge_index: int, 
+    reverse: bool = False
+) -> List[int]:
     """
-    Get the edges of a face in proper order.
+    Args:
+        poly_iterator: Pre-instantiated polygon iterator.
+        face_index: Index of the face to query.
+        start_edge_index: Edge ID to start the ordering from.
+        reverse: Whether to reverse the topological winding.
+
+    Returns:
+        Ordered list of edge IDs.
     """
-    face_it = om.MItMeshPolygon(mesh)
-    face_it.setIndex(face_index)
+    poly_iterator.setIndex(face_index)
+    edges: List[int] = list(poly_iterator.getEdges())
     
-    edges = list(face_it.getEdges())
-    
-    if start_edge_index not in edges:
+    try:
+        index: int = edges.index(start_edge_index)
+    except ValueError:
         return []
-    edge_idx = edges.index(start_edge_index)
-    edges = edges[edge_idx:] + edges[:edge_idx]
+        
+    ordered_edges: List[int] = edges[index:] + edges[:index]
     
     if reverse:
-        edges = edges[:1] + edges[1:][::-1]
+        ordered_edges = ordered_edges[:1] + ordered_edges[1:][::-1]
         
-    return edges
+    return ordered_edges
 
-def _get_face_uvs(mesh, face_index):
-    uv_set_name = om.MFnMesh(mesh).currentUVSetName()
-    face_it = om.MItMeshPolygon(mesh)
-    face_it.setIndex(face_index)
-    return {tuple(face_it.getUV(i, uv_set_name)) for i in range(face_it.polygonVertexCount())}
+def _faces_connected_in_uv(
+    poly_iterator: om.MItMeshPolygon, 
+    edge_iterator: om.MItMeshEdge, 
+    face_index_1: int, 
+    face_index_2: int, 
+    edge_index: int, 
+    uv_set_name: str
+) -> bool:
+    """
+    Args:
+        poly_iterator: Pre-instantiated polygon iterator.
+        face_index_1: Index of the source face.
+        face_index_2: Index of the destination face.
+        edge_index: Shared edge ID between the faces.
+        uv_set_name: Name of the UV set to check.
 
-def _faces_connected_in_uv(mesh, face_index1, face_index2):
-    uvs1 = _get_face_uvs(mesh, face_index1)
-    uvs2 = _get_face_uvs(mesh, face_index2)
-    return len(uvs1 & uvs2) >= 2
+    Returns:
+        True if the edge is continuous in UV space.
+    """
+    edge_iterator.setIndex(edge_index)
+    vertex_0: int = edge_iterator.vertexId(0)
+    vertex_1: int = edge_iterator.vertexId(1)
 
-def _get_adjacent_faces_with_edges(mesh, face_index, start_edge_index, reverse=False, uv_connectivity = False):
-    """ Get adjacent faces and their connecting edges of a given face index in a mesh starting from a specified edge index. """
-    connected_faces_with_edges = []
-    edges = _get_face_edges_from_start_edge(mesh, face_index, start_edge_index, reverse)
+    def get_uv_id(target_face_index: int, target_vertex_index: int) -> int:
+        poly_iterator.setIndex(target_face_index)
+        for i in range(poly_iterator.polygonVertexCount()):
+            if poly_iterator.vertexIndex(i) == target_vertex_index:
+                return poly_iterator.getUVIndex(i, uv_set_name)
+        return -1
+
+    uv_id_face_1_v0: int = get_uv_id(face_index_1, vertex_0)
+    uv_id_face_1_v1: int = get_uv_id(face_index_1, vertex_1)
+    uv_id_face_2_v0: int = get_uv_id(face_index_2, vertex_0)
+    uv_id_face_2_v1: int = get_uv_id(face_index_2, vertex_1)
+
+    return (uv_id_face_1_v0 == uv_id_face_2_v0 and uv_id_face_1_v1 == uv_id_face_2_v1)
+
+def _get_adjacent_faces_with_edges(
+    poly_iterator: om.MItMeshPolygon, 
+    edge_iterator: om.MItMeshEdge, 
+    face_index: int, 
+    start_edge_index: int, 
+    uv_set_name: str, 
+    reverse: bool = False, 
+    uv_connectivity: bool = False
+) -> List[Tuple[int, int]]:
+    """
+    Args:
+        poly_iterator: Pre-instantiated polygon iterator.
+        edge_iterator: Pre-instantiated edge iterator.
+        face_index: Current face index.
+        start_edge_index: Edge index used as topological reference.
+        uv_set_name: Active UV set name.
+        reverse: Whether to reverse winding order.
+        uv_connectivity: Whether to respect UV seams.
+
+    Returns:
+        List of tuples containing (adjacent_face_index, connecting_edge_index).
+    """
+    connected_faces_with_edges: List[Tuple[int, int]] = []
+    ordered_edges: List[int] = _get_face_edges_ordered(poly_iterator, face_index, start_edge_index, reverse)
     
-    for edge_index in edges:
-        edge_it = om.MItMeshEdge(mesh)
-        edge_it.setIndex(edge_index)
-        for adjacent_face_index in edge_it.getConnectedFaces():
+    for edge_index in ordered_edges:
+        edge_iterator.setIndex(edge_index)
+        for adjacent_face_index in edge_iterator.getConnectedFaces():
             if adjacent_face_index != face_index:
-                if uv_connectivity and not _faces_connected_in_uv(mesh, adjacent_face_index, face_index):
-                    continue
+                if uv_connectivity:
+                    if not _faces_connected_in_uv(poly_iterator, edge_iterator, face_index, adjacent_face_index, edge_index, uv_set_name):
+                        continue
                 connected_faces_with_edges.append((adjacent_face_index, edge_index))
-    
     return connected_faces_with_edges
 
+def traverse(
+    mesh_dag: om.MDagPath, 
+    start_left_face: int, 
+    start_right_face: int, 
+    start_left_edge: int, 
+    start_right_edge: int, 
+    uv_connectivity: bool
+) -> Optional[Tuple[Dict[int, int], Dict[int, int]]]:
+    """
+    Args:
+        mesh_dag: DAG path of the mesh.
+        start_left_face: Face index to start BFS on left.
+        start_right_face: Face index to start BFS on right.
+        start_left_edge: Edge index for left reference.
+        start_right_edge: Edge index for right reference.
+        uv_connectivity: Whether to traverse only connected UV shells.
 
-def traverse(mesh, start_left_face, start_right_face, start_left_edge, start_right_edge, uv_connectivity):
-    """ Perform a bfs traversal from both left and right starting faces. """
-    left_queue = deque([(start_left_face, start_left_edge)])
-    right_queue = deque([(start_right_face, start_right_edge)])
+    Returns:
+        Dictionaries of visited faces/edges for both sides or None if asymmetrical.
+    """
+    left_queue: deque = deque([(start_left_face, start_left_edge)])
+    right_queue: deque = deque([(start_right_face, start_right_edge)])
     
-    visited_left = OrderedDict()
-    visited_right = OrderedDict()
+    visited_left: Dict[int, int] = {start_left_face: start_left_edge}
+    visited_right: Dict[int, int] = {start_right_face: start_right_edge}
     
-    visited_left[start_left_face] = start_left_edge
-    visited_right[start_right_face] = start_right_edge
+    poly_iterator: om.MItMeshPolygon = om.MItMeshPolygon(mesh_dag)
+    edge_iterator: om.MItMeshEdge = om.MItMeshEdge(mesh_dag)
+    mesh_function: om.MFnMesh = om.MFnMesh(mesh_dag)
+    uv_set_name: str = mesh_function.currentUVSetName()
     
     while left_queue and right_queue:
-        if left_queue:
-            current_face_left, current_edge_left = left_queue.popleft()
-            left_adjacents = _get_adjacent_faces_with_edges(mesh, current_face_left, current_edge_left, False, uv_connectivity)
-            for left_adj_face, left_adj_edge in left_adjacents:
-                if left_adj_face not in visited_left and left_adj_face not in visited_right:
-                    visited_left[left_adj_face] = left_adj_edge
-                    left_queue.append((left_adj_face, left_adj_edge))
+        current_face_left, current_edge_left = left_queue.popleft()
+        left_adjacents: List[Tuple[int, int]] = _get_adjacent_faces_with_edges(
+            poly_iterator, edge_iterator, current_face_left, current_edge_left, 
+            uv_set_name, False, uv_connectivity
+        )
         
-        if right_queue:
-            current_face_right, current_edge_right = right_queue.popleft()
-            right_adjacents = _get_adjacent_faces_with_edges(mesh, current_face_right, current_edge_right, True, uv_connectivity)
-            for right_adj_face, right_adj_edge in right_adjacents:
-                if right_adj_face not in visited_right and right_adj_face not in visited_left:
-                    visited_right[right_adj_face] = right_adj_edge
-                    right_queue.append((right_adj_face, right_adj_edge))
+        current_face_right, current_edge_right = right_queue.popleft()
+        right_adjacents: List[Tuple[int, int]] = _get_adjacent_faces_with_edges(
+            poly_iterator, edge_iterator, current_face_right, current_edge_right, 
+            uv_set_name, True, uv_connectivity
+        )
+        
+        if len(left_adjacents) != len(right_adjacents):
+            return None
+
+        for (left_adj_face, left_adj_edge), (right_adj_face, right_adj_edge) in zip(left_adjacents, right_adjacents):
+            if left_adj_face not in visited_left and left_adj_face not in visited_right:
+                visited_left[left_adj_face] = left_adj_edge
+                visited_right[right_adj_face] = right_adj_edge
+                left_queue.append((left_adj_face, left_adj_edge))
+                right_queue.append((right_adj_face, right_adj_edge))
 
         if len(left_queue) != len(right_queue):
             return None
-    
+                
     return visited_left, visited_right
 
-def get_polygon_center_uv(mesh_fn, face_index):
-    uv_set_name = mesh_fn.currentUVSetName()
-    face_it = om.MItMeshPolygon(mesh_fn.dagPath())
-    face_it.setIndex(face_index)
-    
-    uvs = []
-    for i in range(face_it.polygonVertexCount()):
-        uv = face_it.getUV(i, uv_set_name)
-        uvs.append(om.MFloatPoint(uv[0], uv[1], 0.0))  
-    
-    center = om.MFloatPoint()
-    for uv in uvs:
-        center += uv
-    
-    center /= len(uvs)
-    return center
+def _get_ordered_verts(edge_iterator: om.MItMeshEdge, ordered_edges: List[int]) -> List[int]:
+    """
+    Args:
+        edge_iterator: Pre-instantiated edge iterator.
+        ordered_edges: Edge IDs in winding order.
 
+    Returns:
+        Vertex IDs in winding order.
+    """
+    vertices: List[int] = []
+    num_edges: int = len(ordered_edges)
+    for i in range(num_edges):
+        edge_iterator.setIndex(ordered_edges[i])
+        edge_1_verts: set = {edge_iterator.vertexId(0), edge_iterator.vertexId(1)}
+        
+        edge_iterator.setIndex(ordered_edges[(i + 1) % num_edges])
+        edge_2_verts: set = {edge_iterator.vertexId(0), edge_iterator.vertexId(1)}
+        
+        start_vert: List[int] = list(edge_1_verts.difference(edge_2_verts))
+        if start_vert:
+            vertices.append(start_vert[0])
+        else:
+            vertices.append(list(edge_1_verts)[0])
+    return vertices
 
-def get_component_mapping(mesh, component_type, visited_left, visited_right):
-    """. Maps the left side to the right side of components. """
-    left_to_right = {}
-    for left_face, right_face in zip(visited_left, visited_right):
-        left_edge = visited_left[left_face]
-        left_components = _get_face_edges_from_start_edge(mesh, left_face, left_edge, False)
+def get_component_mapping(
+    mesh_dag: om.MDagPath, 
+    component_type: str, 
+    visited_left: Dict[int, int], 
+    visited_right: Dict[int, int]
+) -> Dict[int, int]:
+    """
+    Args:
+        mesh_dag: DAG path of the mesh.
+        component_type: Type of mapping ("verts" or "uvs").
+        visited_left: Dict of left-side face-to-edge results from traverse.
+        visited_right: Dict of right-side face-to-edge results from traverse.
+
+    Returns:
+        Mapping of component IDs from left to right.
+    """
+    mapping: Dict[int, int] = {}
+    poly_iterator: om.MItMeshPolygon = om.MItMeshPolygon(mesh_dag)
+    edge_iterator: om.MItMeshEdge = om.MItMeshEdge(mesh_dag)
+    mesh_function: om.MFnMesh = om.MFnMesh(mesh_dag)
+    uv_set_name: str = mesh_function.currentUVSetName()
+    
+    for (left_face, left_edge), (right_face, right_edge) in zip(visited_left.items(), visited_right.items()):
+        left_ordered_edges: List[int] = _get_face_edges_ordered(poly_iterator, left_face, left_edge, False)
+        right_ordered_edges: List[int] = _get_face_edges_ordered(poly_iterator, right_face, right_edge, True)
         
-        right_edge = visited_right[right_face]        
-        right_components = _get_face_edges_from_start_edge(mesh, right_face, right_edge, True)
-        
+        left_v_ordered: List[int] = _get_ordered_verts(edge_iterator, left_ordered_edges)
+        right_v_ordered: List[int] = _get_ordered_verts(edge_iterator, right_ordered_edges)
+
+        left_components: List[int]
+        right_components: List[int]
+
         if component_type == "verts":
-            left_components = _get_verts_from_ordered_edges(mesh, left_components, left_face)
-            right_components = _get_verts_from_ordered_edges(mesh, right_components, right_face)
+            left_components = left_v_ordered
+            right_components = right_v_ordered
         
-        if component_type == 'uvs':            
-            left_components = _get_uv_ids_from_ordered_edges(mesh, left_components, left_face)
-            right_components = _get_uv_ids_from_ordered_edges(mesh, right_components, right_face)
-
-        for i in range(len(left_components)):
-            left_to_right[left_components[i]] = right_components[i]
-    return left_to_right
-
+        elif component_type == "uvs":
+            poly_iterator.setIndex(left_face)
+            left_uv_lookup: Dict[int, int] = {
+                poly_iterator.vertexIndex(i): poly_iterator.getUVIndex(i, uv_set_name) 
+                for i in range(poly_iterator.polygonVertexCount())
+            }
+            
+            poly_iterator.setIndex(right_face)
+            right_uv_lookup: Dict[int, int] = {
+                poly_iterator.vertexIndex(i): poly_iterator.getUVIndex(i, uv_set_name) 
+                for i in range(poly_iterator.polygonVertexCount())
+            }
+            
+            left_components = [left_uv_lookup[v] for v in left_v_ordered]
+            right_components = [right_uv_lookup[v] for v in right_v_ordered]
+        
+        else:
+            continue
+            
+        mapping.update(zip(left_components, right_components))
+        
+    return mapping
