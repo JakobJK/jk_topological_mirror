@@ -37,12 +37,13 @@ class JkTopologicalMirrorCommand(om.MPxCommand):
         arg_data: om.MArgParser = om.MArgParser(self.syntax(), args)
         if arg_data.isFlagSet("mirrorMode"):
             mode_str = arg_data.flagArgumentString("mirrorMode", 0).lower()
-            # Mapping string input to your MirrorMode Enum
+            
             mode_lookup = {
                 "mirror": MirrorMode.MIRROR,
                 "flip": MirrorMode.FLIP,
                 "average": MirrorMode.AVERAGE
             }
+
             self._mirror_mode = mode_lookup.get(mode_str, MirrorMode.MIRROR)
         space_str: str = arg_data.flagArgumentString("mirrorSpace", 0).lower()
         if space_str == MirrorSpace.UV.value:
@@ -144,63 +145,16 @@ class JkTopologicalMirrorCommand(om.MPxCommand):
         # 1. Axis & Camera Setup
         camera = get_current_active_camera()
         edge_vector: om.MVector = get_edge_vector(edge_path, edge_component)
-        cam_right, cam_up, cam_forward = get_camera_vectors(camera)
+        cam_right, cam_up, _ = get_camera_vectors(camera)
 
         self._mirror_direction_is_vertical = get_dominant_axis(edge_vector) == get_dominant_axis(cam_right)
         self._world_axis, is_positive = get_intended_mirror_axis(edge_vector, cam_right = cam_right, cam_up=cam_up)
         
-        # 2. Determine Camera Direction along Mirror Axis
-        # We need to know if the camera is looking 'down' or 'up' the mirror axis
-        # to know if visual Left is World Negative or World Positive.
-
-
-        # 3. Check Alignment (Is visual 'Target' pointing World Positive?)
-        axis_attr = self._world_axis.name.lower()
         
-        # If visual Right/Top points Positive, then visual Left/Bottom (Source) is Negative.
-        # face_a is Negative, so aligned=True means face_a is Source.
-
-        # --- DEBUG ---
-        print(f"\n--- Mirror Debug ---")
-        print(f"Selected edge index: {edge_index}")
-        print(f"Connected faces: {connected_faces}")
-        print(f"Edge vector: {edge_vector}")
-        print(f"Camera Right: {cam_right}, Up: {cam_up}, Forward: {cam_forward}")
-
-        # Compute dots for insight
-        dot_right = edge_vector.normal() * cam_right.normal()
-        dot_up = edge_vector.normal() * cam_up.normal()
-        print(f"Dot(edge, cam_right): {dot_right}")
-        print(f"Dot(edge, cam_up): {dot_up}")
-
-        print(f"Chosen mirror axis: {self._world_axis.name}")
-        print(f"is_positive (camera forward): {is_positive}")
-
-        # World-space face centers
-        mesh_fn: om.MFnMesh = om.MFnMesh(edge_path)
-        face_a, face_b = connected_faces[0], connected_faces[1]
-        center_a = get_shared_vertex_center_world(mesh_fn, face_a, face_b)
-        center_b = get_shared_vertex_center_world(mesh_fn, face_b, face_a)
-        print(f"Face {face_a} center: {center_a}")
-        print(f"Face {face_b} center: {center_b}")
-
-        axis_attr = self._world_axis.name.lower()
-        val_a = getattr(om.MVector(*center_a), axis_attr) if center_a else None
-        val_b = getattr(om.MVector(*center_b), axis_attr) if center_b else None
-        print(f"Face {face_a} {axis_attr.upper()} value: {val_a}")
-        print(f"Face {face_b} {axis_attr.upper()} value: {val_b}")
-
-        print(f"sort_by_world_space result (face_a > face_b along axis): {sort_by_world_space(mesh_fn, face_a, face_b, self._world_axis, is_positive)}")
-        print(f"Top-to-bottom: {self._top_to_bottom}")
-        print(f"Left-to-Right: {self._left_to_right}")
-        print(f"Mirror direction is vertical: {self._mirror_direction_is_vertical}")
-        print(f"--------------------\n")
 
         mesh_fn: om.MFnMesh = om.MFnMesh(edge_path)
         face_a, face_b = connected_faces[0], connected_faces[1]
 
-        # 5. SORT VERTICES BY WORLD POSITION
-        # Ensure face_a is the one with the lower (Negative) value on the mirror axis
 
         if sort_by_world_space(mesh_fn, face_a, face_b, self._world_axis, is_positive):
             face_a, face_b = face_b, face_a
@@ -213,7 +167,6 @@ class JkTopologicalMirrorCommand(om.MPxCommand):
             if self._left_to_right:
                 face_a, face_b = face_b, face_a
 
-        # --- Traversal ---
         result = traverse(mesh_fn.object(), face_a, face_b, edge_index, edge_index, False)
         
         if not result:
