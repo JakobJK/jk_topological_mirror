@@ -4,6 +4,19 @@ import maya.api.OpenMaya as om
 
 from jk_topological_mirror.constants import Axis3d, AxisUV, CameraDirection
 
+def get_face_center(mesh_fn: om.MFnMesh, face_index: int) -> Tuple[float, float, float]:
+    """Returns the world-space center of all vertices of a face."""
+    vert_ids = mesh_fn.getPolygonVertices(face_index)
+    points = [mesh_fn.getPoint(v, om.MSpace.kWorld) for v in vert_ids]
+    n = len(points)
+    if n == 0:
+        return (0.0, 0.0, 0.0)
+    center = om.MPoint()
+    for p in points:
+        center += p
+    center /= n
+    return (center.x, center.y, center.z)
+
 def get_polygon_center_uv(mesh_fn: om.MFnMesh, face_index: int) -> om.MFloatPoint:
     """
     Calculates the average UV coordinate (center) of a specific face.
@@ -38,21 +51,33 @@ def get_polygon_center_uv(mesh_fn: om.MFnMesh, face_index: int) -> om.MFloatPoin
     
     return om.MFloatPoint(avg_u, avg_v)
 
-def get_intended_mirror_axis(edge_vector: om.MVector, camera_forward_vector: om.MVector) -> Axis3d:
-    """
-    Determines the mirror plane axis based on the edge direction and camera view.
+def get_intended_mirror_axis(
+    edge_vector: om.MVector,
+    cam_right: om.MVector,
+    cam_up: om.MVector,
+    cam_forward: om.MVector,
+) -> Axis3d:
 
-    Args:
-        edge_center (om.MVector): The world-space vector of the selected edge.
-        camera_forward_vector (om.MVector): The forward-looking vector of the active camera.
+    edge = edge_vector.normal()
+    right = cam_right.normal()
+    up = cam_up.normal()
+    forward = cam_forward.normal()
 
-    Returns:
-        Axis3d: The enum member representing the calculated mirror plane axis.
-    """
-    edge_axis: str = get_dominant_axis(edge_vector)
-    forward_axis: str = get_dominant_axis(camera_forward_vector)
-    result_str = ({'X', 'Y', 'Z'} - {edge_axis, forward_axis}).pop()
-    return Axis3d[result_str]
+    dot_right = edge * right
+    dot_up = edge * up
+
+    if abs(dot_right) > abs(dot_up):
+        chosen = up
+    else:
+        chosen = right
+
+    axis = get_dominant_axis(chosen)
+
+    # determine sign (important for +Z / -Z cameras)
+    sign = 1.0 if (chosen * forward) >= 0 else -1.0
+
+    return Axis3d[f"{'POS' if sign >= 0 else 'NEG'}_{axis}"]
+
 
 def is_uvs_sorted(mesh_fn: om.MFnMesh, left_face_index: int, right_face_index: int, axis: AxisUV = AxisUV.U) -> bool:
     """
@@ -72,61 +97,48 @@ def is_uvs_sorted(mesh_fn: om.MFnMesh, left_face_index: int, right_face_index: i
     
     return left_center.x < right_center.x if axis == AxisUV.U else left_center.y > right_center.y
 
-def sort_by_world_space(mesh_fn: om.MFnMesh, face_a: int, face_b: int, axis: Axis3d) -> bool:
+def sort_by_world_space(mesh_fn: om.MFnMesh, face_a: int, face_b: int, axis: Axis3d, negative=False) -> bool:
     """
-    Determines if face_a is 'greater than' face_b along a specific world axis.
+    Determines if face_a is 'greater than' face_b along a specific world axis
+    based on the face centers.
 
     Args:
         mesh_fn (om.MFnMesh): The function set for the mesh being queried.
         face_a (int): The index of the first polygon face.
         face_b (int): The index of the second polygon face.
         axis (Axis3d): The world axis (X, Y, or Z) used for the comparison.
+        negative (bool): If True, invert the comparison.
 
     Returns:
-        bool: True if face_a's shared center value is greater than face_b's, False otherwise.
+        bool: True if face_a's center is greater than face_b's along the axis, else False.
     """
-    center_a: Optional[Tuple[float, float, float]] = get_shared_vertex_center_world(mesh_fn, face_a, face_b)
-    if center_a is None:
-        return False  
+    center_a = get_face_center(mesh_fn, face_a)
+    center_b = get_face_center(mesh_fn, face_b)
 
-    center_b: Optional[Tuple[float, float, float]] = get_shared_vertex_center_world(mesh_fn, face_b, face_a)
-    if center_b is None:
-        return False
+    axis_index = {Axis3d.X: 0, Axis3d.Y: 1, Axis3d.Z: 2}[axis]
+    a_val = center_a[axis_index]
+    b_val = center_b[axis_index]
 
-    axis_index: int = {Axis3d.X: 0, Axis3d.Y: 1, Axis3d.Z: 2}[axis]
-    a_val: float = center_a[axis_index]
-    b_val: float = center_b[axis_index]
+    return a_val > b_val if not negative else a_val < b_val
 
-    return a_val > b_val  
-
-def get_camera_vector(camera: str, direction: CameraDirection) -> om.MVector:
+def get_camera_vectors(camera: str) -> tuple[om.MVector, om.MVector, om.MVector]:
     """
-    Extracts normalized world-space vectors from the camera matrix.
+    Returns camera world-space basis vectors:
+    (right, up, forward)
 
-    Args:
-        camera (str): The name of the camera shape or transform node.
-        direction (CameraDirection): The desired direction vector (RIGHT, UP, or FORWARD).
-
-    Returns:
-        om.MVector: The normalized world-space vector for the specified direction.
-
-    Raises:
-        ValueError: If the direction provided is not a valid CameraDirection.
+    Note:
+        Maya cameras look down -Z in local space.
     """
-    matrix: List[float] = cmds.getAttr(camera + ".worldMatrix[0]")
-    m: om.MMatrix = om.MMatrix(matrix)
+    matrix = cmds.getAttr(camera + ".worldMatrix[0]")
+    m = om.MMatrix(matrix)
 
-    if direction == CameraDirection.RIGHT:
-        vec = om.MVector(m[0], m[1], m[2])
-    elif direction == CameraDirection.UP:
-        vec = om.MVector(m[4], m[5], m[6])
-    elif direction == CameraDirection.FORWARD:
-        vec = om.MVector(m[8], m[9], m[10])
-    else:
-        raise ValueError(f"Unknown camera vector direction: {direction}")
+    right = om.MVector(m[0], m[1], m[2]).normal()
+    up = om.MVector(m[4], m[5], m[6]).normal()
 
-    vec.normalize()
-    return vec
+    # Maya forward is -Z
+    forward = om.MVector(-m[8], -m[9], -m[10]).normal()
+
+    return right, up, forward
 
 def get_face_uvs(mesh: om.MObject, face_index: int) -> Set[Tuple[float, float]]:
     """
@@ -257,51 +269,43 @@ def get_active_component() -> Tuple[om.MDagPath, om.MObject]:
     selection_list.add(selection[0])
     return selection_list.getComponent(0)
 
-def is_edge_aligned_with_camera(camera: str, edge_vector: om.MVector) -> bool:
-    """
-    Determines if the edge aligns with camera's up or right vector.
 
-    Args:
-        camera (str): The name of the camera to check alignment against.
-        edge_vector (om.MVector): The world-space vector of the edge.
+def get_intended_mirror_axis(
+    edge_vector: om.MVector,
+    cam_right: om.MVector,
+    cam_up: om.MVector,
+) -> tuple[Axis3d, bool]:
+    """
+    Determine the mirror axis and its direction based on the edge and camera orientation.
 
     Returns:
-        bool: True if the edge is aligned with the camera's up or right orientation, 
-              or if the alignment is ambiguous.
+        Tuple[Axis3d, bool]: (mirror_axis, is_positive)
     """
-    camera_alignment: Dict[str, str] = get_camera_axis_alignment(camera)
-    edge_axis: str = get_dominant_axis(edge_vector)
 
-    is_vertical: bool = edge_axis == camera_alignment["up"]
-    is_horizontal: bool = edge_axis == camera_alignment["right"]
+    edge = edge_vector.normal()
+    right = cam_right.normal()
+    up = cam_up.normal()
 
-    mirror_type: str = "vertical" if is_vertical else "horizontal" if is_horizontal else "ambiguous"
+    edge_axis = get_dominant_axis(edge)  # "X", "Y", or "Z"
+    right_axis = get_dominant_axis(right)
+    up_axis = get_dominant_axis(up)
 
-    if mirror_type == "vertical":
-        up_vector: om.MVector = get_camera_vector(camera, CameraDirection.UP)
-        axis: str = camera_alignment["up"].lower()
-        return (getattr(edge_vector, axis) * getattr(up_vector, axis)) >= 0
+    # Choose the camera vector to mirror across
+    if edge_axis == right_axis:
+        chosen = up
+    elif edge_axis == up_axis:
+        chosen = right
+    else:
+        # Edge is perpendicular to both → pick the camera vector most perpendicular to the edge
+        chosen = right if abs(right * edge) < abs(up * edge) else up
 
-    if mirror_type == "horizontal":
-        right_vector: om.MVector = get_camera_vector(camera, CameraDirection.RIGHT)
-        axis: str = camera_alignment["right"].lower()
-        return (getattr(edge_vector, axis) * getattr(right_vector, axis)) >= 0
+    axis_str = get_dominant_axis(chosen)
+    axis_vec = chosen
 
-    return True
+    # Sign purely from the chosen camera vector component
+    is_positive = getattr(axis_vec, axis_str.lower()) >= 0
 
-def get_dominant_axis(vector: Union[om.MVector, om.MFloatVector]) -> str:
-    """
-    Returns the Axis3d member name as a string based on the largest absolute component.
-
-    Args:
-        vector (Union[om.MVector, om.MFloatVector]): The vector to evaluate.
-
-    Returns:
-        str: The string representation of the dominant axis ("X", "Y", or "Z").
-    """
-    abs_vec: List[float] = [abs(vector.x), abs(vector.y), abs(vector.z)]
-    index: int = abs_vec.index(max(abs_vec))
-    return [Axis3d.X.value, Axis3d.Y.value, Axis3d.Z.value][index]
+    return Axis3d[axis_str], is_positive
 
 def is_edge_selected() -> bool:
     """
@@ -363,6 +367,13 @@ def get_camera_axis_alignment(camera: str) -> Dict[str, str]:
         "forward": get_dominant_axis(forward)
     }
 
+def get_dominant_axis(
+    vector: Union[om.MVector, om.MFloatVector]
+) -> str:
+    abs_vec = [abs(vector.x), abs(vector.y), abs(vector.z)]
+    index = abs_vec.index(max(abs_vec))
+    return ("X", "Y", "Z")[index]
+
 def get_dominant_axis_with_sign(vector: Union[om.MVector, om.MFloatVector]) -> Tuple[str, str]:
     """
     Returns the dominant world axis and its direction (sign).
@@ -381,30 +392,13 @@ def get_dominant_axis_with_sign(vector: Union[om.MVector, om.MFloatVector]) -> T
     return dominant, sign
 
 def get_current_active_camera() -> str:
-    """
-    Returns the camera shape from the last active viewport, 
-    even if the script UI currently has focus.
-
-    Args:
-        None
-
-    Returns:
-        str: The full DAG path to the camera's shape node.
-    """
     try:
-        active_panel = cmds.playblast(query=True, activeEditor=True)
-    except RuntimeError:
+        raw_panel = cmds.playblast(activeEditor=True)
+        active_panel = raw_panel.split('|')[-1]
+        camera_transform = cmds.modelEditor(active_panel, query=True, camera=True)
+        return cmds.ls(camera_transform, long=True)[0] if camera_transform else ""
+    except:
         return ""
-
-    if not active_panel or cmds.getPanel(typeOf=active_panel) != "modelPanel":
-        return ""
-
-    camera_transform = cmds.modelEditor(active_panel, query=True, camera=True)
-    
-    if not camera_transform:
-        return ""
-    shapes = cmds.listRelatives(camera_transform, shapes=True, fullPath=True)
-    return shapes[0] if shapes else ""
 
 
 def are_uvs_horizontal(uvs: List[Tuple[float, float]]) -> bool:

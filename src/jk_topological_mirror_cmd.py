@@ -2,11 +2,11 @@ from maya.api import OpenMaya as om
 from maya import cmds
 from typing import Optional, Dict, List, Tuple, Union
 
-# Import constants
 from jk_topological_mirror.constants import CameraDirection, MirrorSpace, Axis3d, AxisUV
 from jk_topological_mirror.utilities import (
-    is_edge_selected, get_shared_vertex_center_world, get_selected_edge_vector, get_camera_vector,
-    get_shared_uv_center, get_connect_uvs, is_edge_aligned_with_camera, get_current_active_camera, 
+    is_edge_selected, get_shared_vertex_center_world, get_selected_edge_vector, get_camera_vectors,
+    get_shared_uv_center, get_connect_uvs, get_current_active_camera, get_dominant_axis,
+    get_dominant_axis_with_sign,
     are_uvs_horizontal, sort_by_world_space, get_intended_mirror_axis, is_uvs_sorted,
     get_active_component
 )
@@ -19,7 +19,7 @@ class JkTopologicalMirrorCommand(om.MPxCommand):
     def __init__(self) -> None:
         super().__init__()
         self._mode: Optional[MirrorSpace] = None
-        self._average: bool = False
+        self._flip: bool = False
         self._left_to_right: bool = True
         self._top_to_bottom: bool = True
         self._edge_path: Optional[om.MDagPath] = None
@@ -36,7 +36,6 @@ class JkTopologicalMirrorCommand(om.MPxCommand):
 
     def doIt(self, args: om.MArgList) -> None:
         arg_data: om.MArgParser = om.MArgParser(self.syntax(), args)
-        
         mode_str: str = arg_data.flagArgumentString("mirrorSpace", 0).lower()
         if mode_str == MirrorSpace.UV.value:
             self._mode = MirrorSpace.UV
@@ -46,9 +45,9 @@ class JkTopologicalMirrorCommand(om.MPxCommand):
             om.MGlobal.displayError("Unknown mode. Use 'uv' or 'world'.")
             return
 
-        self._average = arg_data.isFlagSet("average")
-        self._left_to_right = not arg_data.isFlagSet("rightToLeft")
-        self._top_to_bottom = not arg_data.isFlagSet("bottomToTop")
+        self._flip = arg_data.isFlagSet("flip")
+        self._left_to_right = arg_data.isFlagSet("leftToRight")
+        self._top_to_bottom = arg_data.isFlagSet("topToBottom")
 
         if self._mode == MirrorSpace.UV:
             self._prepare_uvs()
@@ -62,9 +61,9 @@ class JkTopologicalMirrorCommand(om.MPxCommand):
 
     def redoIt(self) -> None:
         if self._mode == MirrorSpace.UV:
-            mirror_uvs(self._edge_path, self._mapping, self._center, self._average, self._uv_axis)
+            mirror_uvs(self._edge_path, self._mapping, self._center, self._flip, self._uv_axis)
         elif self._mode == MirrorSpace.WORLD:
-            mirror_vertices(self._edge_path, self._mapping, self._center, self._average, axis=self._world_axis)
+            mirror_vertices(self._edge_path, self._mapping, self._center, self._flip, axis=self._world_axis)
 
     def undoIt(self) -> None:
         if not self._edge_path:
@@ -129,8 +128,7 @@ class JkTopologicalMirrorCommand(om.MPxCommand):
         self._center = get_shared_uv_center(mesh_fn, left_face_index, right_face_index)
         self._edge_path = edge_path
         self._original_uvs = mesh_fn.getUVs(mesh_fn.currentUVSetName())
-
-
+    
     def _prepare_vertices(self) -> None:
         if not is_edge_selected():
             self._edge_path = None
@@ -146,46 +144,98 @@ class JkTopologicalMirrorCommand(om.MPxCommand):
             self._edge_path = None
             return
 
-        camera: om.MDagPath = get_current_active_camera()
+        # 1. Axis & Camera Setup
+        camera = get_current_active_camera()
         edge_vector: om.MVector = get_selected_edge_vector()
-        forward_vector: om.MVector = get_camera_vector(camera, CameraDirection.FORWARD)
-        
-        # Get intended axis and map to Axis3d enum
-        self._world_axis = get_intended_mirror_axis(edge_vector, forward_vector)
+        cam_right, cam_up, cam_forward = get_camera_vectors(camera)
 
-        aligned: bool = is_edge_aligned_with_camera(camera, edge_vector)
+        self._mirror_direction_is_vertical = get_dominant_axis(edge_vector) == get_dominant_axis(cam_right)
+        self._world_axis, is_positive = get_intended_mirror_axis(edge_vector, cam_right = cam_right, cam_up=cam_up)
+        
+        # 2. Determine Camera Direction along Mirror Axis
+        # We need to know if the camera is looking 'down' or 'up' the mirror axis
+        # to know if visual Left is World Negative or World Positive.
+
+
+        # 3. Check Alignment (Is visual 'Target' pointing World Positive?)
+        axis_attr = self._world_axis.name.lower()
+        
+        # If visual Right/Top points Positive, then visual Left/Bottom (Source) is Negative.
+        # face_a is Negative, so aligned=True means face_a is Source.
+
+        # --- DEBUG ---
+        print(f"\n--- Mirror Debug ---")
+        print(f"Selected edge index: {edge_index}")
+        print(f"Connected faces: {connected_faces}")
+        print(f"Edge vector: {edge_vector}")
+        print(f"Camera Right: {cam_right}, Up: {cam_up}, Forward: {cam_forward}")
+
+        # Compute dots for insight
+        dot_right = edge_vector.normal() * cam_right.normal()
+        dot_up = edge_vector.normal() * cam_up.normal()
+        print(f"Dot(edge, cam_right): {dot_right}")
+        print(f"Dot(edge, cam_up): {dot_up}")
+
+        print(f"Chosen mirror axis: {self._world_axis.name}")
+        print(f"is_positive (camera forward): {is_positive}")
+
+        # World-space face centers
+        mesh_fn: om.MFnMesh = om.MFnMesh(edge_path)
+        face_a, face_b = connected_faces[0], connected_faces[1]
+        center_a = get_shared_vertex_center_world(mesh_fn, face_a, face_b)
+        center_b = get_shared_vertex_center_world(mesh_fn, face_b, face_a)
+        print(f"Face {face_a} center: {center_a}")
+        print(f"Face {face_b} center: {center_b}")
+
+        axis_attr = self._world_axis.name.lower()
+        val_a = getattr(om.MVector(*center_a), axis_attr) if center_a else None
+        val_b = getattr(om.MVector(*center_b), axis_attr) if center_b else None
+        print(f"Face {face_a} {axis_attr.upper()} value: {val_a}")
+        print(f"Face {face_b} {axis_attr.upper()} value: {val_b}")
+
+        print(f"sort_by_world_space result (face_a > face_b along axis): {sort_by_world_space(mesh_fn, face_a, face_b, self._world_axis, is_positive)}")
+        print(f"Top-to-bottom: {self._top_to_bottom}")
+        print(f"Left-to-Right: {self._left_to_right}")
+        print(f"Mirror direction is vertical: {self._mirror_direction_is_vertical}")
+        print(f"--------------------\n")
 
         mesh_fn: om.MFnMesh = om.MFnMesh(edge_path)
-        face_a: int = connected_faces[0]
-        face_b: int = connected_faces[1]
+        face_a, face_b = connected_faces[0], connected_faces[1]
 
-        if sort_by_world_space(mesh_fn, face_a, face_b, self._world_axis):
+        # 5. SORT VERTICES BY WORLD POSITION
+        # Ensure face_a is the one with the lower (Negative) value on the mirror axis
+
+        if sort_by_world_space(mesh_fn, face_a, face_b, self._world_axis, is_positive):
             face_a, face_b = face_b, face_a
 
-        if not aligned:
-            face_a, face_b = face_b, face_a
 
-        result: Optional[Tuple[Dict[int, int], Dict[int, int]]] = traverse(
-            mesh_fn.object(), face_a, face_b, edge_index, edge_index, False
-        )
+        if self._mirror_direction_is_vertical:
+            if not self._top_to_bottom:
+                face_a, face_b = face_b, face_a
+        else:
+            if self._left_to_right:
+                face_a, face_b = face_b, face_a
+
+        # --- Traversal ---
+        result = traverse(mesh_fn.object(), face_a, face_b, edge_index, edge_index, False)
         
         if not result:
             cmds.warning("Could not define symmetry.")
             self._edge_path = None
             return
 
-        visited_left, visited_right = result
-        self._mapping = get_component_mapping(mesh_fn.object(), 'verts', visited_left, visited_right)
+        self._mapping = get_component_mapping(mesh_fn.object(), 'verts', result[0], result[1])
         self._center = get_shared_vertex_center_world(mesh_fn, face_a, face_b)
         self._edge_path = edge_path
         self._original_points = mesh_fn.getPoints(om.MSpace.kWorld)
+
 
     @staticmethod
     def createSyntax() -> om.MSyntax:
         syntax: om.MSyntax = om.MSyntax()
         syntax.addFlag("-m", "mirrorSpace", om.MSyntax.kString)
-        syntax.addFlag("-a", "average")
-        syntax.addFlag("-rtl", "rightToLeft")
+        syntax.addFlag("-f", "flip")
+        syntax.addFlag("-ltr", "leftToRight")
         syntax.addFlag("-ttb", "topToBottom")
         return syntax
 

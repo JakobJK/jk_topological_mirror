@@ -1,136 +1,95 @@
 import maya.api.OpenMaya as om
-from typing import Dict, Union
 
-from jk_topological_mirror.constants import Axis3d, AxisUV
+from typing import Dict
 
-def mirror_uvs(
-    mesh_dag: om.MDagPath, 
-    uv_mapping: Dict[int, int], 
-    edge_center: Union[om.MPoint, om.MFloatPoint], 
-    average: bool = False, 
-    axis: AxisUV = AxisUV.U
-) -> None:
-    """
-    Mirrors UV coordinates across a specified UV axis based on topological mapping.
+from jk_topological_mirror.constants import Axis3d
 
-    Args:
-        mesh_dag: DAG path of the mesh to modify.
-        uv_mapping: Dictionary mapping source UV IDs to target UV IDs.
-        edge_center: Reference center point for the mirror operation.
-        average: If True, averages position between source and target.
-        axis: AxisUV enum member (U or V).
-    """
-    mesh_function: om.MFnMesh = om.MFnMesh(mesh_dag)
-    uv_set_name: str = mesh_function.currentUVSetName()
-    uv_array_u, uv_array_v = mesh_function.getUVs(uv_set_name)
+def mirror_uvs(mesh, uvs_mapping, edge_center, average=False, axis='U'):
+    uv_set_name = om.MFnMesh(mesh).currentUVSetName()
+    mesh_fn = om.MFnMesh(mesh)
+    uv_array_u, uv_array_v = mesh_fn.getUVs(uv_set_name)
 
-    center_value: float = edge_center[0] if axis == AxisUV.U else edge_center[1]
+    center = edge_center[0] if axis == 'U' else edge_center[1]
 
-    for uv_source, uv_target in uv_mapping.items():
-        u_source: float = uv_array_u[uv_source]
-        v_source: float = uv_array_v[uv_source]
-        u_target: float = uv_array_u[uv_target]
-        v_target: float = uv_array_v[uv_target]
+    for uv_a, uv_b in uvs_mapping.items():
+        u_a, v_a = uv_array_u[uv_a], uv_array_v[uv_a]
+        u_b, v_b = uv_array_u[uv_b], uv_array_v[uv_b]
 
         if average:
-            if axis == AxisUV.U:
-                dist_a: float = abs(u_source - center_value)
-                dist_b: float = abs(u_target - center_value)
-                avg_dist: float = (dist_a + dist_b) / 2.0
-                
-                uv_array_u[uv_source] = center_value + avg_dist if center_value < u_source else center_value - avg_dist
-                uv_array_u[uv_target] = center_value - avg_dist if center_value < u_source else center_value + avg_dist
-                
-                avg_v: float = (v_source + v_target) / 2.0
-                uv_array_v[uv_source], uv_array_v[uv_target] = avg_v, avg_v
+            if axis == 'U':
+                avg_distance = (abs(u_a - center) + abs(u_b - center)) / 2
+                mirrored_u_a = center + avg_distance if center < u_a else center - avg_distance
+                mirrored_u_b = center - avg_distance if center < u_a else center + avg_distance
+                uv_array_u[uv_a], uv_array_u[uv_b] = mirrored_u_a, mirrored_u_b
+                avg_v = (v_a + v_b) / 2
+                uv_array_v[uv_a], uv_array_v[uv_b] = avg_v, avg_v
             else:
-                dist_a = abs(v_source - center_value)
-                dist_b = abs(v_target - center_value)
-                avg_dist = (dist_a + dist_b) / 2.0
-                
-                uv_array_v[uv_source] = center_value + avg_dist if center_value < v_source else center_value - avg_dist
-                uv_array_v[uv_target] = center_value - avg_dist if center_value < v_source else center_value + avg_dist
-                
-                avg_u: float = (u_source + u_target) / 2.0
-                uv_array_u[uv_source], uv_array_u[uv_target] = avg_u, avg_u
+                avg_distance = (abs(v_a - center) + abs(v_b - center)) / 2
+                mirrored_v_a = center + avg_distance if center < v_a else center - avg_distance
+                mirrored_v_b = center - avg_distance if center < v_a else center + avg_distance
+                uv_array_v[uv_a], uv_array_v[uv_b] = mirrored_v_a, mirrored_v_b
+                avg_u = (u_a + u_b) / 2
+                uv_array_u[uv_a], uv_array_u[uv_b] = avg_u, avg_u
         else:
-            if axis == AxisUV.U:
-                dist: float = abs(u_source - center_value)
-                mirrored_u: float = center_value - dist if center_value < u_source else center_value + dist
-                uv_array_u[uv_target] = mirrored_u
-                uv_array_v[uv_target] = v_source
+            if axis == 'U':
+                distance = abs(u_a - center)
+                mirrored_u = center - distance if center < u_a else center + distance
+                uv_array_u[uv_b] = mirrored_u
+                uv_array_v[uv_b] = v_a
             else:
-                dist = abs(v_source - center_value)
-                mirrored_v: float = center_value - dist if center_value < v_source else center_value + dist
-                uv_array_v[uv_target] = mirrored_v
-                uv_array_u[uv_target] = u_source
+                distance = abs(v_a - center)
+                mirrored_v = center - distance if center < v_a else center + distance
+                uv_array_v[uv_b] = mirrored_v
+                uv_array_u[uv_b] = u_a
 
-        if uv_source == uv_target:
-            if axis == AxisUV.U:
-                uv_array_u[uv_source] = center_value
+        if uv_a == uv_b:
+            if axis == 'U':
+                uv_array_u[uv_a] = center
             else:
-                uv_array_v[uv_source] = center_value
+                uv_array_v[uv_a] = center
 
-    mesh_function.setUVs(uv_array_u, uv_array_v, uv_set_name)
-    mesh_function.updateSurface()
+    mesh_fn.setUVs(uv_array_u, uv_array_v, uv_set_name)
+    mesh_fn.updateSurface()
 
-def mirror_vertices(
-    mesh_dag: om.MDagPath, 
-    vertex_mapping: Dict[int, int], 
-    edge_center: om.MPoint, 
-    average: bool = False, 
-    axis: Axis3d = Axis3d.X
-) -> None:
-    """
-    Mirrors vertex positions across a specified 3D axis.
+def mirror_vertices(mesh_path: om.MDagPath, mapping: Dict[int, int], center_point: om.MPoint, flip: bool, axis: Axis3d) -> None:
+    mesh_fn: om.MFnMesh = om.MFnMesh(mesh_path)
+    
+    # We use kObject to match your preferred local-space logic
+    points: om.MPointArray = mesh_fn.getPoints(om.MSpace.kObject)
 
-    Args:
-        mesh_dag: DAG path of the mesh to modify.
-        vertex_mapping: Dictionary mapping source vertex IDs to target vertex IDs.
-        edge_center: Reference center point for the mirror operation.
-        average: If True, averages position between source and target.
-        axis: Axis3d enum member (X, Y, or Z).
-    """
-    mesh_function: om.MFnMesh = om.MFnMesh(mesh_dag)
-    points: om.MPointArray = mesh_function.getPoints(om.MSpace.kObject)
+    # Map the Axis3d enum to the integer index
+    axis_map = {Axis3d.X: 0, Axis3d.Y: 1, Axis3d.Z: 2}
+    axis_index: int = axis_map[axis]
+    center_val: float = center_point[axis_index]
 
-    axis_index_map: Dict[Axis3d, int] = {Axis3d.X: 0, Axis3d.Y: 1, Axis3d.Z: 2}
-    axis_idx: int = axis_index_map[axis]
-    center_val: float = edge_center[axis_idx]
+    for vert_a, vert_b in mapping.items():
+        pos_a: om.MPoint = points[vert_a]
+        pos_b: om.MPoint = points[vert_b]
 
-    for v_src, v_tgt in vertex_mapping.items():
-        pos_src: om.MPoint = om.MPoint(points[v_src])
-        pos_tgt: om.MPoint = om.MPoint(points[v_tgt])
-
-        if v_src == v_tgt:
+        # Handle center-line vertices (where vert_a is vert_b)
+        if vert_a == vert_b:
             for i in range(3):
-                if i == axis_idx:
-                    pos_src[i] = pos_tgt[i] = center_val
+                if i == axis_index:
+                    pos_a[i] = center_val
                 else:
-                    avg: float = (pos_src[i] + pos_tgt[i]) / 2.0
-                    pos_src[i] = pos_tgt[i] = avg
-            points[v_src], points[v_tgt] = pos_src, pos_tgt
+                    # Average the other axes to keep the seam clean
+                    avg = (pos_a[i] + pos_b[i]) / 2
+                    pos_a[i] = avg
+            points[vert_a] = pos_a
             continue
 
-        if average:
-            for i in range(3):
-                if i == axis_idx:
-                    d_src: float = pos_src[i] - center_val
-                    d_tgt: float = pos_tgt[i] - center_val
-                    avg_d: float = (abs(d_src) + abs(d_tgt)) / 2.0
-                    pos_src[i] = center_val + avg_d * (1.0 if d_src >= 0 else -1.0)
-                    pos_tgt[i] = center_val + avg_d * (1.0 if d_tgt >= 0 else -1.0)
-                else:
-                    avg = (pos_src[i] + pos_tgt[i]) / 2.0
-                    pos_src[i] = pos_tgt[i] = avg
-        else:
-            for i in range(3):
-                if i == axis_idx:
-                    pos_tgt[i] = center_val - (pos_src[i] - center_val)
-                else:
-                    pos_tgt[i] = pos_src[i]
+        # Standard mirroring logic: Delta reflection
+        # We calculate how far vert_a is from the center, then place vert_b on the opposite side
+        for i in range(3):
+            if i == axis_index:
+                delta = pos_a[i] - center_val
+                pos_b[i] = center_val - delta
+            else:
+                # Maintain the same height/depth as the source vertex
+                pos_b[i] = pos_a[i]
 
-        points[v_src], points[v_tgt] = pos_src, pos_tgt
+        points[vert_a] = pos_a
+        points[vert_b] = pos_b
 
-    mesh_function.setPoints(points, om.MSpace.kObject)
-    mesh_function.updateSurface()
+    mesh_fn.setPoints(points, om.MSpace.kObject)
+    mesh_fn.updateSurface()
