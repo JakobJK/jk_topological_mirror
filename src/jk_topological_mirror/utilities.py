@@ -2,7 +2,7 @@ from typing import Tuple, List, Set, Optional, Dict, Union
 from maya import cmds
 import maya.api.OpenMaya as om
 
-from jk_topological_mirror.constants import Axis3d, AxisUV, CameraDirection
+from jk_topological_mirror.constants import Axis3d, AxisUV 
 
 def get_face_center(mesh_fn: om.MFnMesh, face_index: int) -> Tuple[float, float, float]:
     """Returns the world-space center of all vertices of a face."""
@@ -50,33 +50,6 @@ def get_polygon_center_uv(mesh_fn: om.MFnMesh, face_index: int) -> om.MFloatPoin
     avg_v: float = sum(v_coords) / len(v_coords)
     
     return om.MFloatPoint(avg_u, avg_v)
-
-def get_intended_mirror_axis(
-    edge_vector: om.MVector,
-    cam_right: om.MVector,
-    cam_up: om.MVector,
-    cam_forward: om.MVector,
-) -> Axis3d:
-
-    edge = edge_vector.normal()
-    right = cam_right.normal()
-    up = cam_up.normal()
-    forward = cam_forward.normal()
-
-    dot_right = edge * right
-    dot_up = edge * up
-
-    if abs(dot_right) > abs(dot_up):
-        chosen = up
-    else:
-        chosen = right
-
-    axis = get_dominant_axis(chosen)
-
-    # determine sign (important for +Z / -Z cameras)
-    sign = 1.0 if (chosen * forward) >= 0 else -1.0
-
-    return Axis3d[f"{'POS' if sign >= 0 else 'NEG'}_{axis}"]
 
 
 def is_uvs_sorted(mesh_fn: om.MFnMesh, left_face_index: int, right_face_index: int, axis: AxisUV = AxisUV.U) -> bool:

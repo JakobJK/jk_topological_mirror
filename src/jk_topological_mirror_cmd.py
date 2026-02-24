@@ -2,11 +2,10 @@ from maya.api import OpenMaya as om
 from maya import cmds
 from typing import Optional, Dict, List, Tuple, Union
 
-from jk_topological_mirror.constants import CameraDirection, MirrorSpace, Axis3d, AxisUV
+from jk_topological_mirror.constants import MirrorSpace, MirrorMode, Axis3d, AxisUV
 from jk_topological_mirror.utilities import (
     is_edge_selected, get_shared_vertex_center_world, get_selected_edge_vector, get_camera_vectors,
     get_shared_uv_center, get_connect_uvs, get_current_active_camera, get_dominant_axis,
-    get_dominant_axis_with_sign,
     are_uvs_horizontal, sort_by_world_space, get_intended_mirror_axis, is_uvs_sorted,
     get_active_component
 )
@@ -36,10 +35,19 @@ class JkTopologicalMirrorCommand(om.MPxCommand):
 
     def doIt(self, args: om.MArgList) -> None:
         arg_data: om.MArgParser = om.MArgParser(self.syntax(), args)
-        mode_str: str = arg_data.flagArgumentString("mirrorSpace", 0).lower()
-        if mode_str == MirrorSpace.UV.value:
+        if arg_data.isFlagSet("mirrorMode"):
+            mode_str = arg_data.flagArgumentString("mirrorMode", 0).lower()
+            # Mapping string input to your MirrorMode Enum
+            mode_lookup = {
+                "mirror": MirrorMode.MIRROR,
+                "flip": MirrorMode.FLIP,
+                "average": MirrorMode.AVERAGE
+            }
+            self._mirror_mode = mode_lookup.get(mode_str, MirrorMode.MIRROR)
+        space_str: str = arg_data.flagArgumentString("mirrorSpace", 0).lower()
+        if space_str == MirrorSpace.UV.value:
             self._mode = MirrorSpace.UV
-        elif mode_str == "world":
+        elif space_str == "world":
             self._mode = MirrorSpace.WORLD
         else:
             om.MGlobal.displayError("Unknown mode. Use 'uv' or 'world'.")
@@ -63,7 +71,7 @@ class JkTopologicalMirrorCommand(om.MPxCommand):
         if self._mode == MirrorSpace.UV:
             mirror_uvs(self._edge_path, self._mapping, self._center, self._flip, self._uv_axis)
         elif self._mode == MirrorSpace.WORLD:
-            mirror_vertices(self._edge_path, self._mapping, self._center, self._flip, axis=self._world_axis)
+            mirror_vertices(self._edge_path, self._mapping, self._center, self._mirror_mode, self._world_axis)
 
     def undoIt(self) -> None:
         if not self._edge_path:
@@ -233,7 +241,8 @@ class JkTopologicalMirrorCommand(om.MPxCommand):
     @staticmethod
     def createSyntax() -> om.MSyntax:
         syntax: om.MSyntax = om.MSyntax()
-        syntax.addFlag("-m", "mirrorSpace", om.MSyntax.kString)
+        syntax.addFlag("-m", "mirrorMode", om.MSyntax.kString)
+        syntax.addFlag("-s", "mirrorSpace", om.MSyntax.kString)
         syntax.addFlag("-f", "flip")
         syntax.addFlag("-ltr", "leftToRight")
         syntax.addFlag("-ttb", "topToBottom")

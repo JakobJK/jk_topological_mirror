@@ -4,10 +4,10 @@ class MirrorSpace(Enum):
     WORLD = "world" 
     UV = "uv"
 
-class CameraDirection(Enum):
-    FORWARD = "forward"
-    UP = "up"
-    RIGHT = "right"
+class MirrorMode(Enum):
+    MIRROR = "mirror"
+    FLIP = "flip"
+    AVERAGE = "average"
 
 class Axis3d(Enum):
     X = "X"
