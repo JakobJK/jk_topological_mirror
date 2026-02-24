@@ -1,54 +1,52 @@
-# jkTopologicalMirror – Maya Plugin Command
+# JK Topological Mirror
 
-`jkTopologicalMirror` is a custom Maya command that mirrors components (UVs or vertices) across a centerline defined by a selected edge. It supports both UV and vertex space mirroring, and undo support.
+A Maya plugin for establishing symmetry based on mesh topology.
+
+![jk_topological_mirror symmetry example](./simple_symmetry.gif)
+
+---
+
+## Features
+
+* Three Mirror Modes:
+    * Mirror: Mirrors one side to the other.
+    * Flip: Swaps sides.
+    * Average: Balances both sides using the average of their coordinates.
+* Camera-Aware: Mirror based on viewport orientation.
+* Vertex & UV Support: Mirror geometry or texture coordinates.
+---
 
 ## Installation
 
-1. Copy `/src/jk_topological_mirror/` into Maya's **scripts** folder:
+1. Copy ./src/jk_topological_mirror folder to Maya scripts path.
+2. Copy ./src/jk_topological_mirror_cmd.py to Maya plug-in path.
+3. Load via Python:
 
-   - **Windows**: `C:/Users/<username>/Documents/maya/<version>/scripts/`
-   - **macOS**: `/Users/<username>/Library/Preferences/Autodesk/maya/<version>/scripts/`
-   - **Linux**: `/home/<username>/maya/<version>/scripts/`
+```python
+from jk_topological_mirror import MirrorTopologyUI
 
-2. Copy `/src/jk_topological_mirror_cmd.py` into Maya's **plug-ins** folder:
+MirrorTopologyUI.show_ui()
+```
 
-   - **Windows**: `C:/Users/<username>/Documents/maya/<version>/plug-ins/`
-   - **macOS**: `/Users/<username>/Library/Preferences/Autodesk/maya/<version>/plug-ins/`
-   - **Linux**: `/home/<username>/maya/<version>/plug-ins/`
 
-3. Load the plugin via Maya Plugin Manager or use:
-   ```python
-   cmds.loadPlugin("jk_topological_mirror_cmd.py")
-   ```
+---
 
 ## Usage
 
-- Create a Maya Shelf Button that runs either a MEL or Python command.
-- Select a single edge that defines a symmetrical axis.
-- Press your shelf button.
+Select an edge, and the mirror will happen perpendicular to that edge. Which means, as an example, if you are selecting an edge that is mostly horizontal, you will mirror vertically from the view of the current active camera. 
 
+The selected edge will also act as a reflection point for the mirror.
 
-```mel
-// MEL Script
-// Mirror UVs
-jkTopologicalMirror -m "uvs";
+You can mirror across any topological centerline. Here is an example of many mirrors across many symmetrical axis:
+![mirroring across many multiple axes](./simple2_symmetry.gif)
 
-// Mirror vertices
-jkTopologicalMirror -m "vertices";
-```
+You can mirror both vertices, or UVs. UVs will be based of UV islands connectivity.
+![](./simple_uv_symmetry.gif)
 
-```python
-# Python
-# Mirror UVs
-cmds.jkTopologicalMirror(mode="uvs")
+### Author
 
-# Mirror vertices
-cmds.jkTopologicalMirror(mode="vertices")
-```
+[**Jakob Kousholt**](https://www.linkedin.com/in/jakobjk/)
 
-### Flags
+### License
 
-- `-m` / `--mode` `<string>`: `"uvs"` or `"vertices"` (required)
-- `-a` / `--average`: Average positions across the center
-- `-rtl` / `--rightToLeft`: Mirror from right to left (default is left to right)
-- `-ttb` / `--topToBottom`: Mirror from top to bottom (default is bottom to top)
+JK Topological Mirror is licensed under the [MIT](https://rem.mit-license.org/) License.

@@ -4,6 +4,8 @@ from shiboken6 import wrapInstance
 import maya.OpenMayaUI as omui
 from maya import cmds
 
+from jk_topological_mirror.constants import TITLE 
+
 
 def get_main_maya_window():
     main_window_ptr = omui.MQtUtil.mainWindow()
@@ -29,7 +31,7 @@ class MirrorTopologyUI(QtWidgets.QMainWindow):
 
     def __init__(self, parent=get_main_maya_window()):
         super().__init__(parent)
-
+        self.setWindowTitle(TITLE)
         self.build_ui()
 
     @property

@@ -168,17 +168,14 @@ def mirror_flip(
     pos_b: om.MPoint = points[vertex_index_b]
     center_val: float = center_point[axis_index]
 
-    # Capture original state of A before modification
     old_pos_a: om.MPoint = om.MPoint(pos_a)
     
-    # Vertex A reflects to where B was (relative to center)
     for i in range(3):
         if i == axis_index:
             pos_a[i] = center_val - (pos_b[i] - center_val)
         else:
             pos_a[i] = pos_b[i]
 
-    # Vertex B reflects to where A was (relative to center)
     for i in range(3):
         if i == axis_index:
             pos_b[i] = center_val - (old_pos_a[i] - center_val)
