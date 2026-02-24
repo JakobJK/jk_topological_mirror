@@ -1,52 +1,125 @@
 import maya.api.OpenMaya as om
 
-from typing import Dict, Tuple
+from typing import Dict, Tuple, List, Union
 
-from jk_topological_mirror.constants import Axis3d, MirrorMode
+from jk_topological_mirror.constants import Axis3d, AxisUV, MirrorMode
 
-def mirror_uvs(mesh, uvs_mapping, edge_center, average=False, axis='U'):
-    uv_set_name = om.MFnMesh(mesh).currentUVSetName()
-    mesh_fn = om.MFnMesh(mesh)
+def mirror_uv_pos(
+    uv_index_a: int, 
+    uv_index_b: int, 
+    u_list: List[float], 
+    v_list: List[float], 
+    center: float, 
+    is_u_axis: bool
+) -> None:
+    """Copies UV position from A to B across the center line."""
+    if uv_index_a == uv_index_b:
+        if is_u_axis: u_list[uv_index_a] = center
+        else: v_list[uv_index_a] = center
+        return
+
+    if is_u_axis:
+        delta = u_list[uv_index_a] - center
+        u_list[uv_index_b] = center - delta
+        v_list[uv_index_b] = v_list[uv_index_a]
+    else:
+        delta = v_list[uv_index_a] - center
+        v_list[uv_index_b] = center - delta
+        u_list[uv_index_b] = u_list[uv_index_a]
+
+
+def mirror_uv_flip(
+    uv_index_a: int, 
+    uv_index_b: int, 
+    u_list: List[float], 
+    v_list: List[float], 
+    center: float, 
+    is_u_axis: bool
+) -> None:
+    """Swaps UV positions of A and B relative to the center line."""
+    old_u_a, old_v_a = u_list[uv_index_a], v_list[uv_index_a]
+    u_b, v_b = u_list[uv_index_b], v_list[uv_index_b]
+
+    if is_u_axis:
+        u_list[uv_index_a] = center - (u_b - center)
+        v_list[uv_index_a] = v_b
+        u_list[uv_index_b] = center - (old_u_a - center)
+        v_list[uv_index_b] = old_v_a
+    else:
+        v_list[uv_index_a] = center - (v_b - center)
+        u_list[uv_index_a] = u_b
+        v_list[uv_index_b] = center - (old_v_a - center)
+        u_list[uv_index_b] = old_u_a
+
+
+def mirror_uv_average(
+    uv_index_a: int, 
+    uv_index_b: int, 
+    u_list: List[float], 
+    v_list: List[float], 
+    center: float, 
+    is_u_axis: bool
+) -> None:
+    """Averages UV positions of A and B across the center line."""
+    u_a, v_a = u_list[uv_index_a], v_list[uv_index_a]
+    u_b, v_b = u_list[uv_index_b], v_list[uv_index_b]
+
+    if uv_index_a == uv_index_b:
+        if is_u_axis: u_list[uv_index_a] = center
+        else: v_list[uv_index_a] = center
+        return
+
+    if is_u_axis:
+        dist_a = u_a - center
+        dist_b = center - u_b
+        avg_dist = (dist_a + dist_b) / 2.0
+        u_list[uv_index_a] = center + avg_dist
+        u_list[uv_index_b] = center - avg_dist
+        avg_v = (v_a + v_b) / 2.0
+        v_list[uv_index_a] = v_list[uv_index_b] = avg_v
+    else:
+        dist_a = v_a - center
+        dist_b = center - v_b
+        avg_dist = (dist_a + dist_b) / 2.0
+        v_list[uv_index_a] = center + avg_dist
+        v_list[uv_index_b] = center - avg_dist
+        avg_u = (u_a + u_b) / 2.0
+        u_list[uv_index_a] = u_list[uv_index_b] = avg_u
+
+def mirror_uvs(
+    mesh_path: om.MDagPath, 
+    uvs_mapping: Dict[int, int], 
+    edge_center: Union[om.MPoint, Tuple[float, float]], 
+    mode: MirrorMode, 
+    axis: AxisUV
+) -> None:
+    """Applies UV mirroring to a mesh based on the provided mapping and mode."""
+    mesh_fn: om.MFnMesh = om.MFnMesh(mesh_path)
+    uv_set_name: str = mesh_fn.currentUVSetName()
     uv_array_u, uv_array_v = mesh_fn.getUVs(uv_set_name)
 
-    center = edge_center[0] if axis == 'U' else edge_center[1]
+    # Determine center value and axis boolean
+    is_u_axis: bool = (axis == AxisUV.U)
+    center: float = edge_center[0] if is_u_axis else edge_center[1]
+
+    # Map modes to helper functions
+    mode_map = {
+        MirrorMode.MIRROR: mirror_uv_pos,
+        MirrorMode.FLIP: mirror_uv_flip,
+        MirrorMode.AVERAGE: mirror_uv_average
+    }
+    
+    selected_func = mode_map[mode]
 
     for uv_a, uv_b in uvs_mapping.items():
-        u_a, v_a = uv_array_u[uv_a], uv_array_v[uv_a]
-        u_b, v_b = uv_array_u[uv_b], uv_array_v[uv_b]
-
-        if average:
-            if axis == 'U':
-                avg_distance = (abs(u_a - center) + abs(u_b - center)) / 2
-                mirrored_u_a = center + avg_distance if center < u_a else center - avg_distance
-                mirrored_u_b = center - avg_distance if center < u_a else center + avg_distance
-                uv_array_u[uv_a], uv_array_u[uv_b] = mirrored_u_a, mirrored_u_b
-                avg_v = (v_a + v_b) / 2
-                uv_array_v[uv_a], uv_array_v[uv_b] = avg_v, avg_v
-            else:
-                avg_distance = (abs(v_a - center) + abs(v_b - center)) / 2
-                mirrored_v_a = center + avg_distance if center < v_a else center - avg_distance
-                mirrored_v_b = center - avg_distance if center < v_a else center + avg_distance
-                uv_array_v[uv_a], uv_array_v[uv_b] = mirrored_v_a, mirrored_v_b
-                avg_u = (u_a + u_b) / 2
-                uv_array_u[uv_a], uv_array_u[uv_b] = avg_u, avg_u
-        else:
-            if axis == 'U':
-                distance = abs(u_a - center)
-                mirrored_u = center - distance if center < u_a else center + distance
-                uv_array_u[uv_b] = mirrored_u
-                uv_array_v[uv_b] = v_a
-            else:
-                distance = abs(v_a - center)
-                mirrored_v = center - distance if center < v_a else center + distance
-                uv_array_v[uv_b] = mirrored_v
-                uv_array_u[uv_b] = u_a
-
-        if uv_a == uv_b:
-            if axis == 'U':
-                uv_array_u[uv_a] = center
-            else:
-                uv_array_v[uv_a] = center
+        selected_func(
+            uv_a, 
+            uv_b, 
+            uv_array_u, 
+            uv_array_v, 
+            center, 
+            is_u_axis
+        )
 
     mesh_fn.setUVs(uv_array_u, uv_array_v, uv_set_name)
     mesh_fn.updateSurface()

@@ -51,24 +51,19 @@ def get_polygon_center_uv(mesh_fn: om.MFnMesh, face_index: int) -> om.MFloatPoin
     
     return om.MFloatPoint(avg_u, avg_v)
 
-
-def is_uvs_sorted(mesh_fn: om.MFnMesh, left_face_index: int, right_face_index: int, axis: AxisUV = AxisUV.U) -> bool:
+def is_uvs_sorted(mesh_fn: om.MFnMesh, face_index_a: int, face_index_b: int, axis: AxisUV = AxisUV.U) -> bool:
     """
-    Checks if two faces are sorted correctly along a UV axis.
-
-    Args:
-        mesh_fn (om.MFnMesh): The function set for the mesh being queried.
-        left_face_index (int): The index of the first polygon face.
-        right_face_index (int): The index of the second polygon face.
-        axis (AxisUV): The UV axis to check alignment against (U or V).
-
-    Returns:
-        bool: True if the faces are sorted correctly along the specified axis, False otherwise.
+    Returns True if face_index_a is 'smaller' than face_index_b on the given UV axis.
+    U: True if A is to the Left of B.
+    V: True if A is Above B (consistent with your prepare_uvs logic).
     """
-    left_center: om.MFloatPoint = get_polygon_center_uv(mesh_fn, left_face_index)
-    right_center: om.MFloatPoint = get_polygon_center_uv(mesh_fn, right_face_index)
+    center_a: om.MFloatPoint = get_polygon_center_uv(mesh_fn, face_index_a)
+    center_b: om.MFloatPoint = get_polygon_center_uv(mesh_fn, face_index_b)
     
-    return left_center.x < right_center.x if axis == AxisUV.U else left_center.y > right_center.y
+    if axis == AxisUV.U:
+        return center_a.x < center_b.x
+    
+    return center_a.y > center_b.y
 
 def sort_by_world_space(mesh_fn: om.MFnMesh, face_a: int, face_b: int, axis: Axis3d, negative=False) -> bool:
     """
@@ -171,27 +166,19 @@ def get_shared_vertex_center_world(mesh_fn: om.MFnMesh, face_index1: int, face_i
         return (avg_point.x, avg_point.y, avg_point.z)
     return None
 
-def get_selected_edge_vector() -> om.MVector:
+def get_edge_vector(dag_path: om.MDagPath, component: om.MObject) -> om.MVector:
     """
-    Calculates the normalized vector of the currently selected edge in world space.
-
-    Returns:
-        om.MVector: The normalized world-space vector of the selected edge.
+    Calculates the normalized vector of the specified edge in world space.
     """
-    sel: om.MSelectionList = om.MGlobal.getActiveSelectionList()
-    dag_path, component = sel.getComponent(0)
-    mesh_fn: om.MFnMesh = om.MFnMesh(dag_path)
-
-    # Calling next(it) advanced the iterator, but the variable edge_it was unused.
-    edges: om.MItMeshEdge = om.MItMeshEdge(dag_path, component)
-    next(edges)
+    edge_it = om.MItMeshEdge(dag_path, component)
     
-    v1: om.MVector = om.MVector(mesh_fn.getPoint(edges.vertexId(0), om.MSpace.kWorld))
-    v2: om.MVector = om.MVector(mesh_fn.getPoint(edges.vertexId(1), om.MSpace.kWorld))
+    # Get world-space points directly from the iterator
+    p1 = edge_it.point(0, om.MSpace.kWorld)
+    p2 = edge_it.point(1, om.MSpace.kWorld)
     
-    vec: om.MVector = (v2 - v1)
-    vec.normalize()
-    return vec
+    edge_vector = om.MVector(p2 - p1)
+    edge_vector.normalize()
+    return edge_vector
 
 def get_shared_uv_center(mesh_fn: om.MFnMesh, face_index1: int, face_index2: int) -> Optional[Tuple[float, float]]:
     """
@@ -259,23 +246,20 @@ def get_intended_mirror_axis(
     right = cam_right.normal()
     up = cam_up.normal()
 
-    edge_axis = get_dominant_axis(edge)  # "X", "Y", or "Z"
+    edge_axis = get_dominant_axis(edge)
     right_axis = get_dominant_axis(right)
     up_axis = get_dominant_axis(up)
 
-    # Choose the camera vector to mirror across
     if edge_axis == right_axis:
         chosen = up
     elif edge_axis == up_axis:
         chosen = right
     else:
-        # Edge is perpendicular to both → pick the camera vector most perpendicular to the edge
         chosen = right if abs(right * edge) < abs(up * edge) else up
 
     axis_str = get_dominant_axis(chosen)
     axis_vec = chosen
 
-    # Sign purely from the chosen camera vector component
     is_positive = getattr(axis_vec, axis_str.lower()) >= 0
 
     return Axis3d[axis_str], is_positive
@@ -296,49 +280,6 @@ def is_edge_selected() -> bool:
         return False
     return True
 
-def get_active_panel_type() -> str:
-    """
-    Returns the mirror mode based on the currently focused Maya panel.
-
-    Args:
-        None
-
-    Returns:
-        str: The type of panel focused ("modelPanel", "uvEditor", etc.).
-    """
-    panel: str = cmds.getPanel(withFocus=True)
-    panel_type: str = cmds.getPanel(typeOf=panel)
-
-    if panel_type == "modelPanel":
-        return "modelPanel"
-    if panel_type == "scriptedPanel":
-        ptype: str = cmds.scriptedPanel(panel, query=True, type=True)
-        return "uvEditor" if ptype == "polyTexturePlacementPanel" else ptype
-    return panel_type
-
-def get_camera_axis_alignment(camera: str) -> Dict[str, str]:
-    """
-    Maps camera local directions to world dominant axes.
-
-    Args:
-        camera (str): The name of the camera node.
-
-    Returns:
-        Dict[str, str]: A dictionary mapping 'right', 'up', and 'forward' 
-                        to their dominant world axes ('X', 'Y', or 'Z').
-    """
-    matrix: List[float] = cmds.getAttr(camera + ".worldMatrix[0]")
-    m: om.MMatrix = om.MMatrix(matrix)
-
-    right: om.MVector = om.MVector(m[0], m[1], m[2])
-    up: om.MVector = om.MVector(m[4], m[5], m[6])
-    forward: om.MVector = om.MVector(m[8], m[9], m[10])
-
-    return {
-        "right": get_dominant_axis(right),
-        "up": get_dominant_axis(up),
-        "forward": get_dominant_axis(forward)
-    }
 
 def get_dominant_axis(
     vector: Union[om.MVector, om.MFloatVector]
@@ -347,22 +288,6 @@ def get_dominant_axis(
     index = abs_vec.index(max(abs_vec))
     return ("X", "Y", "Z")[index]
 
-def get_dominant_axis_with_sign(vector: Union[om.MVector, om.MFloatVector]) -> Tuple[str, str]:
-    """
-    Returns the dominant world axis and its direction (sign).
-
-    Args:
-        vector (Union[om.MVector, om.MFloatVector]): The vector to evaluate.
-
-    Returns:
-        Tuple[str, str]: A tuple containing the axis name ("X", "Y", or "Z") 
-                         and the direction ("positive" or "negative").
-    """
-    dominant: str = get_dominant_axis(vector)
-    val: float = getattr(vector, dominant.lower())
-    sign: str = 'positive' if val >= 0 else 'negative'
-    
-    return dominant, sign
 
 def get_current_active_camera() -> str:
     try:
