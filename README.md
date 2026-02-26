@@ -14,16 +14,22 @@ A Maya plugin for establishing symmetry based on mesh topology.
     * Average: Balances both sides using the average of their coordinates.
 * Camera-Aware: Mirror based on viewport orientation.
 * Vertex & UV Support: Mirror geometry or texture coordinates.
+
 ---
 
 ## Installation
 
-1. Download the [jk_topological_mirror.zip](https://github.com/JakobJK/jk_topoligical_mirror/archive/main.zip)
-2. Unzip, and copy the content of the `./src` directory to a Maya Module Folder.
+1. Download and extract the contents of [jk_topological_mirror.zip](https://github.com/JakobJK/jk_topological_mirror/archive/main.zip) to a temporary location.
+2. Unzip, and copy the content of the `./src` directory to a Maya Module Folder. If the folder doesn't already exists, create it.
     - **Windows:** `%USERPROFILE%\Documents\maya\modules`
     - **macOS:** `~/Library/Preferences/Autodesk/maya/modules`
     - **Linux:** `~/maya/modules`
-3. Load the "jk_topological_mirror.py" plugin using Maya's Plugin Manager. 
+    - ![](./docs/module-folder.png)
+
+3. Load the Plug-in. 
+    - Open Maya and navigate to **Windows > Settings/Preferences > Plug-in Manager**.
+    - Find `jk_topological_mirror.py` and check **Loaded** (and **Auto Load** if desired). 
+    - ![Plugin manager](./docs/plugin-manager.png)
 4. Load the UI via Python:
 
 ```python
@@ -31,7 +37,6 @@ from jk_topological_mirror import MirrorTopologyUI
 
 MirrorTopologyUI.show_ui()
 ```
-
 
 ---
 

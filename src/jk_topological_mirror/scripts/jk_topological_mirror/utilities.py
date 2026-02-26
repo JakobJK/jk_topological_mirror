@@ -1,11 +1,19 @@
-from typing import Tuple, List, Set, Optional, Dict, Union
+from typing import Tuple, List, Set, Optional, Union
 from maya import cmds
 import maya.api.OpenMaya as om
 
 from jk_topological_mirror.constants import Axis3d, AxisUV 
 
 def get_face_center(mesh_fn: om.MFnMesh, face_index: int) -> Tuple[float, float, float]:
-    """Returns the world-space center of all vertices of a face."""
+    """Calculates the world-space center point of a specific polygon face.
+
+    Args:
+        mesh_fn (om.MFnMesh): The function set for the mesh containing the face.
+        face_index (int): The index of the polygon face to evaluate.
+
+    Returns:
+        Tuple[float, float, float]: The (x, y, z) world-space coordinates of the face's center.
+    """
     vert_ids = mesh_fn.getPolygonVertices(face_index)
     points = [mesh_fn.getPoint(v, om.MSpace.kWorld) for v in vert_ids]
     n = len(points)
@@ -18,12 +26,11 @@ def get_face_center(mesh_fn: om.MFnMesh, face_index: int) -> Tuple[float, float,
     return (center.x, center.y, center.z)
 
 def get_polygon_center_uv(mesh_fn: om.MFnMesh, face_index: int) -> om.MFloatPoint:
-    """
-    Calculates the average UV coordinate (center) of a specific face.
+    """Calculates the average UV coordinate (center) of a specific face.
 
     Args:
         mesh_fn (om.MFnMesh): The function set for the mesh being queried.
-        face_index (int): The index of the polygon face.
+        face_index (int): The index of the polygon face to evaluate.
 
     Returns:
         om.MFloatPoint: The average U and V coordinates as an MFloatPoint.
@@ -52,10 +59,17 @@ def get_polygon_center_uv(mesh_fn: om.MFnMesh, face_index: int) -> om.MFloatPoin
     return om.MFloatPoint(avg_u, avg_v)
 
 def is_uvs_sorted(mesh_fn: om.MFnMesh, face_index_a: int, face_index_b: int, axis: AxisUV = AxisUV.U) -> bool:
-    """
-    Returns True if face_index_a is 'smaller' than face_index_b on the given UV axis.
-    U: True if A is to the Left of B.
-    V: True if A is Above B (consistent with your prepare_uvs logic).
+    """Checks the relative positioning of two faces along a specified UV axis.
+
+    Args:
+        mesh_fn (om.MFnMesh): The function set for the mesh being queried.
+        face_index_a (int): The index of the first polygon face.
+        face_index_b (int): The index of the second polygon face.
+        axis (AxisUV): The UV axis (U or V) used for the comparison.
+
+    Returns:
+        bool: True if face A is positioned before face B on the specified axis 
+            (Left of B on U, or Above B on V).
     """
     center_a: om.MFloatPoint = get_polygon_center_uv(mesh_fn, face_index_a)
     center_b: om.MFloatPoint = get_polygon_center_uv(mesh_fn, face_index_b)
@@ -90,12 +104,14 @@ def sort_by_world_space(mesh_fn: om.MFnMesh, face_a: int, face_b: int, axis: Axi
     return a_val > b_val if not negative else a_val < b_val
 
 def get_camera_vectors(camera: str) -> tuple[om.MVector, om.MVector, om.MVector]:
-    """
-    Returns camera world-space basis vectors:
-    (right, up, forward)
+    """Retrieves the world-space basis vectors (Right, Up, Forward) for a given camera.
 
-    Note:
-        Maya cameras look down -Z in local space.
+    Args:
+        camera (str): The name or path of the camera transform node.
+
+    Returns:
+        Tuple[om.MVector, om.MVector, om.MVector]: A tuple containing the normalized 
+            Right (X), Up (Y), and Forward (-Z) vectors in world space.
     """
     matrix = cmds.getAttr(camera + ".worldMatrix[0]")
     m = om.MMatrix(matrix)
@@ -125,8 +141,15 @@ def get_face_uvs(mesh: om.MObject, face_index: int) -> Set[Tuple[float, float]]:
     return {tuple(face_it.getUV(i, uv_set_name)) for i in range(face_it.polygonVertexCount())}
 
 def get_connect_uvs(mesh: om.MObject, face_index1: int, face_index2: int) -> List[Tuple[float, float]]:
-    """
-    Returns indices of UVs shared between two faces.
+    """Identifies the UV coordinates shared between two polygon faces.
+
+    Args:
+        mesh (om.MObject): The mesh object containing the faces.
+        face_index1 (int): The index of the first polygon face.
+        face_index2 (int): The index of the second polygon face.
+
+    Returns:
+        List[Tuple[float, float]]: A list of shared UV coordinate pairs (u, v) found on both faces.
     """
     uvs1: Set[Tuple[float, float]] = get_face_uvs(mesh, face_index1)
     uvs2: Set[Tuple[float, float]] = get_face_uvs(mesh, face_index2)
@@ -167,8 +190,14 @@ def get_shared_vertex_center_world(mesh_fn: om.MFnMesh, face_index1: int, face_i
     return None
 
 def get_edge_vector(dag_path: om.MDagPath, component: om.MObject) -> om.MVector:
-    """
-    Calculates the normalized vector of the specified edge in world space.
+    """Calculates the normalized world-space vector of the specified edge.
+
+    Args:
+        dag_path (om.MDagPath): The DAG path to the mesh containing the edge.
+        component (om.MObject): The component object representing the specific edge.
+
+    Returns:
+        om.MVector: The normalized directional vector of the edge in world space.
     """
     edge_it = om.MItMeshEdge(dag_path, component)
     
@@ -217,9 +246,6 @@ def get_active_component() -> Tuple[om.MDagPath, om.MObject]:
     """
     Returns the current selection's DagPath and component MObject.
 
-    Args:
-        None
-
     Returns:
         Tuple[om.MDagPath, om.MObject]: A tuple containing the DAG path to the node 
                                        and the MObject representing the selected components.
@@ -234,12 +260,20 @@ def get_intended_mirror_axis(
     edge_vector: om.MVector,
     cam_right: om.MVector,
     cam_up: om.MVector,
-) -> tuple[Axis3d, bool]:
-    """
-    Determine the mirror axis and its direction based on the edge and camera orientation.
+    ) -> tuple[Axis3d, bool]:
+    """Determines the mirror axis and direction by comparing the edge and camera orientation.
+
+    This logic identifies which world axis best represents the "mirror plane" by finding 
+    the dominant camera vector that is most perpendicular to the selected topological edge.
+
+    Args:
+        edge_vector (om.MVector): The world-space vector of the reference edge.
+        cam_right (om.MVector): The world-space right vector of the active camera.
+        cam_up (om.MVector): The world-space up vector of the active camera.
 
     Returns:
-        Tuple[Axis3d, bool]: (mirror_axis, is_positive)
+        Tuple[Axis3d, bool]: A tuple containing the identified MirrorAxis (X, Y, or Z) 
+            and a boolean indicating if the direction is positive along that axis.
     """
 
     edge = edge_vector.normal()
@@ -268,9 +302,6 @@ def is_edge_selected() -> bool:
     """
     Checks if a single edge is selected.
 
-    Args:
-        None
-
     Returns:
         bool: True if exactly one edge component is selected, False otherwise.
     """
@@ -283,13 +314,26 @@ def is_edge_selected() -> bool:
 
 def get_dominant_axis(
     vector: Union[om.MVector, om.MFloatVector]
-) -> str:
+    ) -> str:
+    """Identifies the primary Cartesian axis (X, Y, or Z) based on the vector's largest component.
+
+    Args:
+        vector (Union[om.MVector, om.MFloatVector]): The vector to evaluate.
+
+    Returns:
+        str: The name of the dominant axis ("X", "Y", or "Z").
+    """
     abs_vec = [abs(vector.x), abs(vector.y), abs(vector.z)]
     index = abs_vec.index(max(abs_vec))
     return ("X", "Y", "Z")[index]
 
 
 def get_current_active_camera() -> str:
+    """Retrieves the long name of the camera transform node for the currently active viewport.
+
+    Returns:
+        str: The full DAG path of the active camera transform, or an empty string if retrieval fails.
+    """
     try:
         raw_panel = cmds.playblast(activeEditor=True)
         active_panel = raw_panel.split('|')[-1]

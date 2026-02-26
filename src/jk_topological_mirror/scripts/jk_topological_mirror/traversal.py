@@ -9,16 +9,17 @@ def _get_face_edges_ordered(
     face_index: int, 
     start_edge_index: int, 
     reverse: bool = False
-) -> List[int]:
-    """
+    ) -> List[int]:
+    """Retrieves an ordered list of edge IDs for a face starting from a specific edge.
+
     Args:
-        poly_iterator: Pre-instantiated polygon iterator.
-        face_index: Index of the face to query.
-        start_edge_index: Edge ID to start the ordering from.
-        reverse: Whether to reverse the topological winding.
+        poly_iterator (om.MItMeshPolygon): Pre-instantiated polygon iterator used to query mesh data.
+        face_index (int): The index of the polygon face to query.
+        start_edge_index (int): The edge ID to be used as the first element in the ordered list.
+        reverse (bool): If True, reverses the topological winding order of the returned edges.
 
     Returns:
-        Ordered list of edge IDs.
+        List[int]: A list of edge IDs ordered according to the face winding.
     """
     poly_iterator.setIndex(face_index)
     edges: List[int] = list(poly_iterator.getEdges())
@@ -42,17 +43,19 @@ def _faces_connected_in_uv(
     face_index_2: int, 
     edge_index: int, 
     uv_set_name: str
-) -> bool:
-    """
+    ) -> bool:
+    """Determines if two faces share a continuous (seam-less) connection in UV space.
+
     Args:
-        poly_iterator: Pre-instantiated polygon iterator.
-        face_index_1: Index of the source face.
-        face_index_2: Index of the destination face.
-        edge_index: Shared edge ID between the faces.
-        uv_set_name: Name of the UV set to check.
+        poly_iterator (om.MItMeshPolygon): Pre-instantiated polygon iterator for querying UV indices.
+        edge_iterator (om.MItMeshEdge): Pre-instantiated edge iterator for querying vertex IDs.
+        face_index_1 (int): The index of the first polygon face.
+        face_index_2 (int): The index of the second polygon face.
+        edge_index (int): The index of the shared edge between the two faces.
+        uv_set_name (str): The name of the UV set to evaluate.
 
     Returns:
-        True if the edge is continuous in UV space.
+        bool: True if the UV indices for both vertices of the shared edge match across both faces.
     """
     edge_iterator.setIndex(edge_index)
     vertex_0: int = edge_iterator.vertexId(0)
@@ -81,18 +84,19 @@ def _get_adjacent_faces_with_edges(
     reverse: bool = False, 
     uv_connectivity: bool = False
 ) -> List[Tuple[int, int]]:
-    """
+    """Retrieves adjacent faces and their connecting edges in topological order.
+
     Args:
-        poly_iterator: Pre-instantiated polygon iterator.
-        edge_iterator: Pre-instantiated edge iterator.
-        face_index: Current face index.
-        start_edge_index: Edge index used as topological reference.
-        uv_set_name: Active UV set name.
-        reverse: Whether to reverse winding order.
-        uv_connectivity: Whether to respect UV seams.
+        poly_iterator (om.MItMeshPolygon): Pre-instantiated polygon iterator for querying face data.
+        edge_iterator (om.MItMeshEdge): Pre-instantiated edge iterator for querying connected faces.
+        face_index (int): The index of the current face being evaluated.
+        start_edge_index (int): The edge ID used as the starting reference for ordering.
+        uv_set_name (str): The name of the active UV set for connectivity checks.
+        reverse (bool): If True, processes the edges in reverse topological winding order.
+        uv_connectivity (bool): If True, skips adjacent faces that are separated by a UV seam.
 
     Returns:
-        List of tuples containing (adjacent_face_index, connecting_edge_index).
+        List[Tuple[int, int]]: A list of tuples containing (adjacent_face_index, connecting_edge_index).
     """
     connected_faces_with_edges: List[Tuple[int, int]] = []
     ordered_edges: List[int] = _get_face_edges_ordered(poly_iterator, face_index, start_edge_index, reverse)
@@ -114,19 +118,22 @@ def traverse(
     start_left_edge: int, 
     start_right_edge: int, 
     uv_connectivity: bool
-) -> Optional[Tuple[Dict[int, int], Dict[int, int]]]:
-    """
+    ) -> Optional[Tuple[Dict[int, int], Dict[int, int]]]:
+    """Performs a dual Breadth-First Search (BFS) to map topological symmetry between two mesh sides.
+
     Args:
-        mesh_dag: DAG path of the mesh.
-        start_left_face: Face index to start BFS on left.
-        start_right_face: Face index to start BFS on right.
-        start_left_edge: Edge index for left reference.
-        start_right_edge: Edge index for right reference.
-        uv_connectivity: Whether to traverse only connected UV shells.
+        mesh_dag (om.MDagPath): The DAG path of the mesh to be traversed.
+        start_left_face (int): The starting face index for the left-side traversal.
+        start_right_face (int): The starting face index for the right-side traversal.
+        start_left_edge (int): The initial reference edge index on the left face to define winding.
+        start_right_edge (int): The initial reference edge index on the right face to define winding.
+        uv_connectivity (bool): If True, the traversal is restricted to connected UV shells.
 
     Returns:
-        Dictionaries of visited faces/edges for both sides or None if asymmetrical.
-    """
+        Optional[Tuple[Dict[int, int], Dict[int, int]]]: A tuple containing two dictionaries 
+            mapping visited face indices to their entry edge indices for the left and right sides, 
+            or None if a topological asymmetry is detected.
+    """ 
     left_queue: deque = deque([(start_left_face, start_left_edge)])
     right_queue: deque = deque([(start_right_face, start_right_edge)])
     
@@ -167,13 +174,14 @@ def traverse(
     return visited_left, visited_right
 
 def _get_ordered_verts(edge_iterator: om.MItMeshEdge, ordered_edges: List[int]) -> List[int]:
-    """
+    """Extracts vertex IDs in winding order by comparing consecutive edges in a sequence.
+
     Args:
-        edge_iterator: Pre-instantiated edge iterator.
-        ordered_edges: Edge IDs in winding order.
+        edge_iterator (om.MItMeshEdge): Pre-instantiated edge iterator used to query vertex IDs.
+        ordered_edges (List[int]): A list of edge IDs arranged in topological winding order.
 
     Returns:
-        Vertex IDs in winding order.
+        List[int]: A list of vertex IDs ordered to match the topological winding of the edges.
     """
     vertices: List[int] = []
     num_edges: int = len(ordered_edges)
@@ -196,16 +204,17 @@ def get_component_mapping(
     mirror_space: MirrorSpace, 
     visited_left: Dict[int, int], 
     visited_right: Dict[int, int]
-) -> Dict[int, int]:
-    """
+    ) -> Dict[int, int]:
+    """Generates a mapping of component IDs between two sides based on traversal results.
+
     Args:
-        mesh_dag: DAG path of the mesh.
-        mirror_mode: Type of mapping ("verts" or "uvs").
-        visited_left: Dict of left-side face-to-edge results from traverse.
-        visited_right: Dict of right-side face-to-edge results from traverse.
+        mesh_dag (om.MDagPath): The DAG path of the mesh being processed.
+        mirror_space (MirrorSpace): The coordinate space (WORLD for vertices, UV for UV indices).
+        visited_left (Dict[int, int]): Mapping of face indices to entry edge indices for the left side.
+        visited_right (Dict[int, int]): Mapping of face indices to entry edge indices for the right side.
 
     Returns:
-        Mapping of component IDs from left to right.
+        Dict[int, int]: A dictionary where keys are source component IDs (left) and values are target component IDs (right).
     """
     mapping: Dict[int, int] = {}
     poly_iterator: om.MItMeshPolygon = om.MItMeshPolygon(mesh_dag)

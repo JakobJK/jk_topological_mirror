@@ -8,16 +8,27 @@ from maya import cmds
 
 from jk_topological_mirror.constants import TITLE, VERSION
 
-def get_main_maya_window():
+def get_main_maya_window() -> QtWidgets.QWidget:
+    """Retrieves the Maya main window as a QWidget.
+
+    Returns:
+        QtWidgets.QWidget: The Maya main window instance.
+    """
     main_window_ptr = omui.MQtUtil.mainWindow()
     main_window = wrapInstance(int(main_window_ptr), QtWidgets.QWidget)
     return main_window
 
 class MirrorTopologyUI(QtWidgets.QMainWindow):
+    """Main window class for the jkTopologicalMirror tool UI."""
     _instance = None
 
     @classmethod
-    def show_ui(cls):
+    def show_ui(cls) -> 'MirrorTopologyUI':
+        """Displays the tool window, ensuring only a single instance exists.
+
+        Returns:
+            MirrorTopologyUI: The active instance of the tool window.
+        """
         if not cls._instance:
             cls._instance = MirrorTopologyUI()
 
@@ -30,12 +41,22 @@ class MirrorTopologyUI(QtWidgets.QMainWindow):
         return cls._instance
 
     def __init__(self, parent=get_main_maya_window()):
+        """Initializes the UI window and builds the layout.
+
+        Args:
+            parent (QtWidgets.QWidget): The parent widget for this window.
+        """
         super().__init__()
         self.setWindowTitle(f"{TITLE} [{VERSION}]")
         self.build_ui()
 
     @property
     def settings(self):
+        """Retrieves current UI settings as a dictionary for command execution.
+
+        Returns:
+            dict: Contains 'mirrorMode', 'leftToRight', and 'topToBottom' values.
+        """
         mode_id = self.mirror_mode_group.checkedId()
         mode_map = {0: "mirror", 1: "flip", 2: "average"}
 
@@ -49,6 +70,7 @@ class MirrorTopologyUI(QtWidgets.QMainWindow):
         }
 
     def build_ui(self):
+        """Constructs the widget hierarchy and connects signals."""
         main_widget = QtWidgets.QWidget()
         layout = QtWidgets.QVBoxLayout(main_widget)
 
@@ -104,15 +126,18 @@ class MirrorTopologyUI(QtWidgets.QMainWindow):
         self.mirror_mode_group.buttonClicked.connect(self.on_mirror_mode_changed)
 
     def on_mirror_mode_changed(self, _):
-        """
-        Handles when the mirror mode changes. The mirror settings are irrelevant for the mirror modes: Flip, and Average.
-        """
+        """Enables or disables direction checkboxes based on the selected MirrorMode."""
         mode_id = self.mirror_mode_group.checkedId()
         enabled = mode_id == 0
         self.left_to_right_checkbox.setEnabled(enabled)
         self.top_to_bottom_checkbox.setEnabled(enabled)
 
     def run_command(self, mirror_space):
+        """Executes the jkTopologicalMirror command with current settings.
+
+        Args:
+            mirror_space (str): The space to perform the mirror in ('world' or 'uv').
+        """
         try:
             cmds.jkTopologicalMirror(mirrorSpace=mirror_space, **self.settings)
         except Exception as e:

@@ -142,7 +142,6 @@ class JkTopologicalMirrorCommand(om.MPxCommand):
             self._edge_path = None
             return
 
-        # 1. Axis & Camera Setup
         camera = get_current_active_camera()
         edge_vector: om.MVector = get_edge_vector(edge_path, edge_component)
         cam_right, cam_up, _ = get_camera_vectors(camera)
@@ -160,6 +159,8 @@ class JkTopologicalMirrorCommand(om.MPxCommand):
 
 
         if self._mirror_direction_is_vertical:
+            # _top_to_bottom is: Positive -> Negative
+            # _left_to_right is: Negative -> Positive
             if not self._top_to_bottom:
                 face_a, face_b = face_b, face_a
         else:
