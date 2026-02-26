@@ -17,12 +17,12 @@ class JkTopologicalMirrorCommand(om.MPxCommand):
 
     def __init__(self) -> None:
         super().__init__()
-        self._mode: Optional[MirrorSpace] = None
-        self._flip: bool = False
+        self._mirror_space = MirrorSpace.WORLD
+        self._mirror_mode = MirrorMode.MIRROR 
         self._left_to_right: bool = True
         self._top_to_bottom: bool = True
         self._edge_path: Optional[om.MDagPath] = None
-        self._mapping: Optional[Dict[int, int]] = None
+        self._mapping: Dict[int, int] = {}
         self._center: Optional[Union[om.MPoint, om.MFloatPoint]] = None
         self._uv_axis: AxisUV = AxisUV.U
         self._world_axis: Axis3d = Axis3d.X
@@ -47,9 +47,9 @@ class JkTopologicalMirrorCommand(om.MPxCommand):
             self._mirror_mode = mode_lookup.get(mode_str, MirrorMode.MIRROR)
         space_str: str = arg_data.flagArgumentString("mirrorSpace", 0).lower()
         if space_str == MirrorSpace.UV.value:
-            self._mode = MirrorSpace.UV
+            self._mirror_space = MirrorSpace.UV
         elif space_str == "world":
-            self._mode = MirrorSpace.WORLD
+            self._mirror_space = MirrorSpace.WORLD
         else:
             om.MGlobal.displayError("Unknown mode. Use 'uv' or 'world'.")
             return
@@ -58,9 +58,9 @@ class JkTopologicalMirrorCommand(om.MPxCommand):
         self._left_to_right = arg_data.isFlagSet("leftToRight")
         self._top_to_bottom = arg_data.isFlagSet("topToBottom")
 
-        if self._mode == MirrorSpace.UV:
+        if self._mirror_space == MirrorSpace.UV:
             self._prepare_uvs()
-        elif self._mode == MirrorSpace.WORLD:
+        elif self._mirror_space == MirrorSpace.WORLD:
             self._prepare_vertices()
 
         if not self._edge_path or not self._mapping or self._center is None:
@@ -69,10 +69,10 @@ class JkTopologicalMirrorCommand(om.MPxCommand):
         self.redoIt()
 
     def redoIt(self) -> None:
-        if self._mode == MirrorSpace.UV:
+        if self._mirror_space == MirrorSpace.UV:
             mirror_uvs(self._edge_path, self._mapping, self._center, self._mirror_mode, self._uv_axis)
 
-        elif self._mode == MirrorSpace.WORLD:
+        elif self._mirror_space == MirrorSpace.WORLD:
             mirror_vertices(self._edge_path, self._mapping, self._center, self._mirror_mode, self._world_axis)
 
     def undoIt(self) -> None:
@@ -80,10 +80,10 @@ class JkTopologicalMirrorCommand(om.MPxCommand):
             return
             
         mesh_fn: om.MFnMesh = om.MFnMesh(self._edge_path)
-        if self._mode == MirrorSpace.UV and self._original_uvs:
+        if self._mirror_space == MirrorSpace.UV and self._original_uvs:
             mesh_fn.setUVs(self._original_uvs[0], self._original_uvs[1], mesh_fn.currentUVSetName())
             mesh_fn.updateSurface()
-        elif self._mode == MirrorSpace.WORLD and self._original_points:
+        elif self._mirror_space == MirrorSpace.WORLD and self._original_points:
             mesh_fn.setPoints(self._original_points, om.MSpace.kWorld)
             mesh_fn.updateSurface()
 
@@ -122,7 +122,7 @@ class JkTopologicalMirrorCommand(om.MPxCommand):
             self._edge_path = None
             return
 
-        self._mapping = get_component_mapping(mesh_fn.object(), 'uvs', result[0], result[1])
+        self._mapping = get_component_mapping(mesh_fn.object(), self._mirror_space, result[0], result[1])
         self._center = get_shared_uv_center(mesh_fn, face_a, face_b)
         self._edge_path = edge_path
         self._original_uvs = mesh_fn.getUVs(mesh_fn.currentUVSetName())
@@ -151,7 +151,6 @@ class JkTopologicalMirrorCommand(om.MPxCommand):
         self._world_axis, is_positive = get_intended_mirror_axis(edge_vector, cam_right = cam_right, cam_up=cam_up)
         
         
-
         mesh_fn: om.MFnMesh = om.MFnMesh(edge_path)
         face_a, face_b = connected_faces[0], connected_faces[1]
 
@@ -174,7 +173,7 @@ class JkTopologicalMirrorCommand(om.MPxCommand):
             self._edge_path = None
             return
 
-        self._mapping = get_component_mapping(mesh_fn.object(), 'verts', result[0], result[1])
+        self._mapping = get_component_mapping(mesh_fn.object(), self._mirror_space, result[0], result[1])
         self._center = get_shared_vertex_center_world(mesh_fn, face_a, face_b)
         self._edge_path = edge_path
         self._original_points = mesh_fn.getPoints(om.MSpace.kWorld)

@@ -1,17 +1,17 @@
+import traceback
+
 from PySide6 import QtWidgets
 from shiboken6 import wrapInstance
 
 import maya.OpenMayaUI as omui
 from maya import cmds
 
-from jk_topological_mirror.constants import TITLE 
-
+from jk_topological_mirror.constants import TITLE, VERSION
 
 def get_main_maya_window():
     main_window_ptr = omui.MQtUtil.mainWindow()
     main_window = wrapInstance(int(main_window_ptr), QtWidgets.QWidget)
     return main_window
-
 
 class MirrorTopologyUI(QtWidgets.QMainWindow):
     _instance = None
@@ -30,8 +30,8 @@ class MirrorTopologyUI(QtWidgets.QMainWindow):
         return cls._instance
 
     def __init__(self, parent=get_main_maya_window()):
-        super().__init__(parent)
-        self.setWindowTitle(TITLE)
+        super().__init__()
+        self.setWindowTitle(f"{TITLE} [{VERSION}]")
         self.build_ui()
 
     @property
@@ -104,13 +104,15 @@ class MirrorTopologyUI(QtWidgets.QMainWindow):
         self.mirror_mode_group.buttonClicked.connect(self.on_mirror_mode_changed)
 
     def on_mirror_mode_changed(self, _):
+        """
+        Handles when the mirror mode changes. The mirror settings are irrelevant for the mirror modes: Flip, and Average.
+        """
         mode_id = self.mirror_mode_group.checkedId()
         enabled = mode_id == 0
         self.left_to_right_checkbox.setEnabled(enabled)
         self.top_to_bottom_checkbox.setEnabled(enabled)
 
     def run_command(self, mirror_space):
-        import traceback
         try:
             cmds.jkTopologicalMirror(mirrorSpace=mirror_space, **self.settings)
         except Exception as e:

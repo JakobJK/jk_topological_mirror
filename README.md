@@ -2,7 +2,7 @@
 
 A Maya plugin for establishing symmetry based on mesh topology.
 
-![jk_topological_mirror symmetry example](./simple_symmetry.gif)
+![jk_topological_mirror symmetry example](./docs/simple_symmetry.gif)
 
 ---
 
@@ -18,9 +18,13 @@ A Maya plugin for establishing symmetry based on mesh topology.
 
 ## Installation
 
-1. Copy ./src/jk_topological_mirror folder to Maya scripts path.
-2. Copy ./src/jk_topological_mirror_cmd.py to Maya plug-in path.
-3. Load via Python:
+1. Download the [jk_topological_mirror.zip](https://github.com/JakobJK/jk_topoligical_mirror/archive/main.zip)
+2. Unzip, and copy the content of the `./src` directory to a Maya Module Folder.
+    - **Windows:** `%USERPROFILE%\Documents\maya\modules`
+    - **macOS:** `~/Library/Preferences/Autodesk/maya/modules`
+    - **Linux:** `~/maya/modules`
+3. Load the "jk_topological_mirror.py" plugin using Maya's Plugin Manager. 
+4. Load the UI via Python:
 
 ```python
 from jk_topological_mirror import MirrorTopologyUI
@@ -38,10 +42,10 @@ Select an edge, and the mirror will happen perpendicular to that edge. Which mea
 The selected edge will also act as a reflection point for the mirror.
 
 You can mirror across any topological centerline. Here is an example of many mirrors across many symmetrical axis:
-![mirroring across many multiple axes](./simple2_symmetry.gif)
+![mirroring across many multiple axes](./docs/simple2_symmetry.gif)
 
 You can mirror both vertices, or UVs. UVs will be based of UV islands connectivity.
-![](./simple_uv_symmetry.gif)
+![](./docs/simple_uv_symmetry.gif)
 
 ### Author
 

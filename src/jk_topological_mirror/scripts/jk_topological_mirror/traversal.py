@@ -1,5 +1,7 @@
 import maya.api.OpenMaya as om
 from collections import deque
+
+from jk_topological_mirror.constants import MirrorSpace
 from typing import List, Dict, Tuple, Optional
 
 def _get_face_edges_ordered(
@@ -191,14 +193,14 @@ def _get_ordered_verts(edge_iterator: om.MItMeshEdge, ordered_edges: List[int]) 
 
 def get_component_mapping(
     mesh_dag: om.MDagPath, 
-    component_type: str, 
+    mirror_space: MirrorSpace, 
     visited_left: Dict[int, int], 
     visited_right: Dict[int, int]
 ) -> Dict[int, int]:
     """
     Args:
         mesh_dag: DAG path of the mesh.
-        component_type: Type of mapping ("verts" or "uvs").
+        mirror_mode: Type of mapping ("verts" or "uvs").
         visited_left: Dict of left-side face-to-edge results from traverse.
         visited_right: Dict of right-side face-to-edge results from traverse.
 
@@ -221,11 +223,11 @@ def get_component_mapping(
         left_components: List[int]
         right_components: List[int]
 
-        if component_type == "verts":
+        if mirror_space == MirrorSpace.WORLD:
             left_components = left_v_ordered
             right_components = right_v_ordered
         
-        elif component_type == "uvs":
+        elif mirror_space == MirrorSpace.UV:
             poly_iterator.setIndex(left_face)
             left_uv_lookup: Dict[int, int] = {
                 poly_iterator.vertexIndex(i): poly_iterator.getUVIndex(i, uv_set_name) 
@@ -240,9 +242,6 @@ def get_component_mapping(
             
             left_components = [left_uv_lookup[v] for v in left_v_ordered]
             right_components = [right_uv_lookup[v] for v in right_v_ordered]
-        
-        else:
-            continue
             
         mapping.update(zip(left_components, right_components))
         

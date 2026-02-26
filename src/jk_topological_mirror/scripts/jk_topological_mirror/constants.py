@@ -1,7 +1,7 @@
 from enum import Enum
 
-
 TITLE = "jkTopologicalMirror"
+VERSION = "1.0.0"
 
 class MirrorSpace(Enum):
     WORLD = "world" 
