@@ -118,42 +118,30 @@ def traverse(
     start_left_edge: int, 
     start_right_edge: int, 
     uv_connectivity: bool
-    ) -> Optional[Tuple[Dict[int, int], Dict[int, int]]]:
-    """Performs a dual Breadth-First Search (BFS) to map topological symmetry between two mesh sides.
-
-    Args:
-        mesh_dag (om.MDagPath): The DAG path of the mesh to be traversed.
-        start_left_face (int): The starting face index for the left-side traversal.
-        start_right_face (int): The starting face index for the right-side traversal.
-        start_left_edge (int): The initial reference edge index on the left face to define winding.
-        start_right_edge (int): The initial reference edge index on the right face to define winding.
-        uv_connectivity (bool): If True, the traversal is restricted to connected UV shells.
-
-    Returns:
-        Optional[Tuple[Dict[int, int], Dict[int, int]]]: A tuple containing two dictionaries 
-            mapping visited face indices to their entry edge indices for the left and right sides, 
-            or None if a topological asymmetry is detected.
-    """ 
-    left_queue: deque = deque([(start_left_face, start_left_edge)])
-    right_queue: deque = deque([(start_right_face, start_right_edge)])
+) -> Optional[Tuple[Dict[int, int], Dict[int, int]]]:
+    left_queue = deque([(start_left_face, start_left_edge)])
+    right_queue = deque([(start_right_face, start_right_edge)])
     
-    visited_left: Dict[int, int] = {start_left_face: start_left_edge}
-    visited_right: Dict[int, int] = {start_right_face: start_right_edge}
+    visited_all = {start_left_face, start_right_face}
     
-    poly_iterator: om.MItMeshPolygon = om.MItMeshPolygon(mesh_dag)
-    edge_iterator: om.MItMeshEdge = om.MItMeshEdge(mesh_dag)
-    mesh_function: om.MFnMesh = om.MFnMesh(mesh_dag)
-    uv_set_name: str = mesh_function.currentUVSetName()
+    visited_left = {start_left_face: start_left_edge}
+    visited_right = {start_right_face: start_right_edge}
+    
+    poly_iterator = om.MItMeshPolygon(mesh_dag)
+    edge_iterator = om.MItMeshEdge(mesh_dag)
+    mesh_function = om.MFnMesh(mesh_dag)
+    uv_set_name = mesh_function.currentUVSetName()
     
     while left_queue and right_queue:
         current_face_left, current_edge_left = left_queue.popleft()
-        left_adjacents: List[Tuple[int, int]] = _get_adjacent_faces_with_edges(
+        current_face_right, current_edge_right = right_queue.popleft()
+
+        left_adjacents = _get_adjacent_faces_with_edges(
             poly_iterator, edge_iterator, current_face_left, current_edge_left, 
             uv_set_name, False, uv_connectivity
         )
         
-        current_face_right, current_edge_right = right_queue.popleft()
-        right_adjacents: List[Tuple[int, int]] = _get_adjacent_faces_with_edges(
+        right_adjacents = _get_adjacent_faces_with_edges(
             poly_iterator, edge_iterator, current_face_right, current_edge_right, 
             uv_set_name, True, uv_connectivity
         )
@@ -161,16 +149,20 @@ def traverse(
         if len(left_adjacents) != len(right_adjacents):
             return None
 
-        for (left_adj_face, left_adj_edge), (right_adj_face, right_adj_edge) in zip(left_adjacents, right_adjacents):
-            if left_adj_face not in visited_left and left_adj_face not in visited_right:
-                visited_left[left_adj_face] = left_adj_edge
-                visited_right[right_adj_face] = right_adj_edge
-                left_queue.append((left_adj_face, left_adj_edge))
-                right_queue.append((right_adj_face, right_adj_edge))
-
-        if len(left_queue) != len(right_queue):
-            return None
+        for (la_f, la_e), (ra_f, ra_e) in zip(left_adjacents, right_adjacents):
+            if la_f not in visited_all and ra_f not in visited_all:
+                visited_all.add(la_f)
+                visited_all.add(ra_f)
                 
+                visited_left[la_f] = la_e
+                visited_right[ra_f] = ra_e
+                
+                left_queue.append((la_f, la_e))
+                right_queue.append((ra_f, ra_e))
+                
+            elif (la_f in visited_all) != (ra_f in visited_all):
+                return None
+
     return visited_left, visited_right
 
 def _get_ordered_verts(edge_iterator: om.MItMeshEdge, ordered_edges: List[int]) -> List[int]:
