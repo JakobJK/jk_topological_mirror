@@ -2,6 +2,7 @@ from enum import Enum
 
 TITLE = "jkTopologicalMirror"
 VERSION = "1.0.0"
+AUTHOR = "Jakob Kousholt"
 
 class MirrorSpace(Enum):
     """Defines the coordinate space in which the mirror operation is performed."""

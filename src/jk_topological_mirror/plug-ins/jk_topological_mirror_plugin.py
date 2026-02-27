@@ -2,7 +2,7 @@ from maya.api import OpenMaya as om
 from maya import cmds
 from typing import Optional, Dict, List, Tuple, Union
 
-from jk_topological_mirror.constants import MirrorSpace, MirrorMode, Axis3d, AxisUV
+from jk_topological_mirror.constants import MirrorSpace, MirrorMode, Axis3d, AxisUV, AUTHOR, VERSION
 from jk_topological_mirror.utilities import (
     is_edge_selected, get_shared_vertex_center_world, get_edge_vector, get_camera_vectors,
     get_shared_uv_center, get_connect_uvs, get_current_active_camera, get_dominant_axis,
@@ -194,7 +194,7 @@ def maya_useNewAPI() -> bool:
     return True
 
 def initializePlugin(plugin: om.MObject) -> None:
-    plugin_fn: om.MFnPlugin = om.MFnPlugin(plugin)
+    plugin_fn: om.MFnPlugin = om.MFnPlugin(plugin, AUTHOR, VERSION, "any")
     plugin_fn.registerCommand(
         JkTopologicalMirrorCommand.kPluginCmdName, 
         JkTopologicalMirrorCommand.cmdCreator, 
