@@ -15,7 +15,12 @@ A Maya plugin for establishing symmetry based on mesh topology.
 * Camera-Aware: Mirror based on viewport orientation.
 * Vertex & UV Support: Mirror geometry or texture coordinates.
 
----
+## Prerequisites
+
+| Requirement | Specification |
+| :--- | :--- |
+| **Maya Version** | 2022+ (Python 3.7+) |
+| **Geometry** | Manifold, consistent topology |
 
 ## Installation
 
@@ -42,15 +47,29 @@ MirrorTopologyUI.show_ui()
 
 ## Usage
 
-Select an edge, and the mirror will happen perpendicular to that edge. Which means, as an example, if you are selecting an edge that is mostly horizontal, you will mirror vertically from the view of the current active camera. 
+- Select exactly one edge (the centerline).
+- Align your camera so your selected axis is in clear view.
+    - The tool mirrors from screen-left to screen-right if the edge orientation is vertical, regardless of world axes.
+- Click "World" for mirroring in 3D space, or UV for texture coordinates.
 
-The selected edge will also act as a reflection point for the mirror.
 
-You can mirror across any topological centerline. Here is an example of many mirrors across many symmetrical axis:
+You can mirror across any topological centerline. Here is an example of a model, that has topological symmetry on all three axes.
 ![mirroring across many multiple axes](./docs/simple2_symmetry.gif)
 
-You can mirror both vertices, or UVs. UVs will be based of UV islands connectivity.
+You can mirror both vertices, or UVs. UVs will be based of UV islands connectivity. 
+
 ![](./docs/simple_uv_symmetry.gif)
+## How it Works
+
+The algorithm utilizes a synchronized dual-traversal BFS starting from the adjacent faces of the central edge. This approach enables a performant topological comparison between both sides of the mesh.
+
+- Complexity: $O(V + E)$ time and $O(V)$ space, where $V$ is vertices and $E$ is edges.
+- Validation: The algorithm verifies vertex valence (connected edges) at each step to ensure topological symmetry before applying transforms.
+
+![double bi-directional bfs traversal](./docs/bidirectional_bfs_traversal.gif)
+
+*Fig 1. Visual representation of the dual-traversal BFS starting from the center-edge. The actual running time is nearly instant. :)*
+
 
 ### Author
 
